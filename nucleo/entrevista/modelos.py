@@ -7,14 +7,15 @@ from typing import Annotated, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-VERSAO_CONTRATO = "1.2.0"
+VERSAO_CONTRATO = "1.3.0"
 # 1.1.0 (05/11/2026, aditiva): decisão do usuário sobre a regra documentada — POST /entrevistas/{id}/regra, campo
 #        `decisao_regra` no estado e no contrato, `regra_documentada` no contrato, slot pseudo "decisao_regra" em `faltando`.
 # 1.2.0 (05/11/2026, aditiva): confirmação do Escopo do Pedido — POST /entrevistas/{id}/confirmacao (um chamado por tipo, no
 #        máximo 2), POST /entrevistas/{id}/confirmacao/chamados (vínculo com os CD_SOLICITACAO, idempotente),
 #        GET /solicitacoes/{cd}/escopo, GET /confirmacoes/pendentes; `banco_app` no /saude. Respostas, regra e contrato
 #        numa entrevista CONFIRMADA → 409.
-
+# 1.3.0 (06/11/2026, aditiva): rodada de complemento — depois das 2 rodadas, se ainda faltar item obrigatório, a entrevista não
+#        se encerra: devolve só as perguntas fixas do que falta (sem IA, sem limite de rodadas). Campo `complemento` no estado.
 
 class Base(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -109,8 +110,10 @@ class EstadoEntrevista(Base):
     """Resposta de POST /entrevistas, POST /entrevistas/{id}/respostas e GET /entrevistas/{id}."""
     id: str
     versao_contrato: str = VERSAO_CONTRATO
-    rodada: int = Field(ge=1, le=3, description="rodada atual de perguntas (máx. 2; 3 = encerrada)")
+    rodada: int = Field(ge=1, le=3, description="rodada atual de perguntas (máx. 2; 3 = encerrada ou em complemento)")
     pronto: bool = Field(description="true: não há mais perguntas; chamar POST /contrato")
+    complemento: bool = Field(default=False, description="true: as perguntas são só dos itens obrigatórios que ainda faltam, "
+                                                         "depois das 2 rodadas (roteiro fixo, sem IA)")
     segmentos: list[Segmento]
     candidatos_funcionalidade: list[CandidatoFuncionalidade] = Field(default_factory=list)
     regra_documentada: Optional[RegraDocumentada] = None

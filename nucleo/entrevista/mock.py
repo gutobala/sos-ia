@@ -6,7 +6,8 @@ Serve para a sessão do SOS desenvolver novaAbertura.asp / entrevistaApi.asp ant
   - Benner / SEI / banco / Receita / arquivo no relato geram uma pergunta de gatilho (integração);
   - "não permite" / "não deixa" / "bloqueia" num corretivo devolvem uma regra documentada de exemplo; o segmento fica CORRETIVO
     até POST /regra (aceita → EVOLUTIVO_EXISTENTE com mais uma rodada de perguntas; recusa → segue corretivo);
-  - no máximo 2 rodadas; depois, pronto=true;
+  - no máximo 2 rodadas; depois, se ainda faltar item obrigatório, rodadas de complemento (só o que falta, sem limite);
+    quando não falta nada, pronto=true;
   - confirmação (1.2.0) com as mesmas regras do motor real (confirmacao.py), versões e vínculos em memória.
 """
 import datetime
@@ -30,21 +31,7 @@ RX_GATILHO = re.compile(r"\b(benner|sei|banco|receita|arquivo|planilha|e-?mail)\
 RX_REGRA = re.compile(r"n[aã]o (permite|deixa)|bloque", re.I)
 SLOT_PRINCIPAL = {TipoSegmento.CORRETIVO: "o_que_aconteceu", TipoSegmento.EVOLUTIVO_EXISTENTE: "o_que_muda",
                   TipoSegmento.EVOLUTIVO_NOVO: "o_que_faz"}
-PERGUNTA_SLOT = {
-    "onde_ocorre": ("Em qual tela ou funcionalidade isso acontece?", "Ex.: menu Cadastro > Alienação, botão Salvar."),
-    "o_que_aconteceu": ("O que aconteceu exatamente? Copie a mensagem de erro, se houver.", None),
-    "como_reproduzir": ("Quais passos levam ao problema?", "Ex.: 1) abrir a tela X; 2) informar Y; 3) clicar em Z."),
-    "desde_quando_quem": ("Desde quando acontece e quem é afetado?", "Só você, sua área ou todos os usuários?"),
-    "funcionalidade": ("Qual funcionalidade será alterada?", "Use o nome do menu ou da tela."),
-    "o_que_muda": ("O que deve mudar no comportamento atual?", None),
-    "exemplo_concreto": ("Dê um exemplo concreto, com valores.", "Ex.: para o contrato X, o valor deveria ser Y e hoje é Z."),
-    "fora_de_escopo": ("O que NÃO faz parte deste pedido?", "Se nada, responda 'nada'."),
-    "outros_sistemas": ("As informações vêm de outro sistema ou precisam ser gravadas em outro sistema?",
-                        "Ex.: Benner, SEI, banco. Se não, responda 'não'."),
-    "quem_usa": ("Quem vai usar a nova funcionalidade?", "Área ou perfil de usuário."),
-    "informacoes_guardadas": ("Que informações a funcionalidade vai guardar?", "Liste os campos principais."),
-    "o_que_faz": ("O que a funcionalidade faz com essas informações?", None),
-}
+PERGUNTA_SLOT = roteiros.PERGUNTA_SLOT      # mantido aqui: o motor importa daqui
 
 
 class MotorMock:
@@ -86,9 +73,14 @@ class MotorMock:
 
     def _resposta(self, eid):
         st = self.estado[eid]
-        pronto = st["rodada"] > MAX_RODADAS or not roteiros.faltando(st["segs"])
-        st["perguntas"] = [] if pronto else self._perguntas(st)
-        pronto = pronto or not st["perguntas"]
+        falta = roteiros.faltando(st["segs"])
+        st["complemento"] = st["rodada"] > MAX_RODADAS and bool(falta)
+        if st["complemento"]:                     # 1.3.0: depois das 2 rodadas, só o que falta, sem limite de rodadas
+            st["complementos"] = st.get("complementos", 0) + 1
+            st["perguntas"] = [Pergunta(**p) for p in roteiros.perguntas_complemento(st["segs"], st["complementos"])]
+        else:
+            st["perguntas"] = [] if st["rodada"] > MAX_RODADAS or not falta else self._perguntas(st)
+        pronto = not st["perguntas"]
         dicas = [f"Falta: {f.rotulo}" for f in roteiros.faltando(st["segs"])][:3]
         req = st["req"]
         cand = []
@@ -100,7 +92,7 @@ class MotorMock:
                                             similaridade=0.79)]
         return EstadoEntrevista(id=eid, rodada=min(st["rodada"], 3), pronto=pronto, segmentos=st["segs"],
                                 candidatos_funcionalidade=cand, regra_documentada=self._regra(req), decisao_regra=st.get("decisao"),
-                                perguntas=st["perguntas"],
+                                perguntas=st["perguntas"], complemento=st["complemento"],
                                 nota=self._nota(st["segs"]), dicas_medidor=dicas, analise_ia=self.analise_ia)
 
     @staticmethod
@@ -141,8 +133,8 @@ class MotorMock:
         st = self.estado[eid]
         return EstadoEntrevista(id=eid, rodada=min(st["rodada"], 3), pronto=not st["perguntas"], segmentos=st["segs"],
                                 regra_documentada=self._regra(st["req"]), decisao_regra=st.get("decisao"),
-                                perguntas=st["perguntas"], nota=self._nota(st["segs"]),
-                                dicas_medidor=[], analise_ia=self.analise_ia)
+                                perguntas=st["perguntas"], complemento=bool(st.get("complemento") and st["perguntas"]),
+                                nota=self._nota(st["segs"]), dicas_medidor=[], analise_ia=self.analise_ia)
 
     def responder(self, eid, resp: Respostas) -> EstadoEntrevista:
         st = self.estado[eid]
@@ -159,7 +151,7 @@ class MotorMock:
             seg = next(s for s in st["segs"] if s.n == p.segmento)
             slots = [x.model_copy(update={"valor": r.texto}) if x.codigo == p.slot else x for x in seg.slots]
             st["segs"] = [roteiros.revalida(seg.model_copy(update={"slots": slots})) if s.n == seg.n else s for s in st["segs"]]
-        st["rodada"] += 1
+        st["rodada"] = min(st["rodada"] + 1, MAX_RODADAS + 1)   # fica em 3 durante o complemento
         return self._resposta(eid)
 
     def contrato(self, eid) -> Contrato:

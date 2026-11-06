@@ -240,12 +240,12 @@
       "type": "string"
     },
     "versao_contrato": {
-      "default": "1.2.0",
+      "default": "1.3.0",
       "title": "Versao Contrato",
       "type": "string"
     },
     "rodada": {
-      "description": "rodada atual de perguntas (máx. 2; 3 = encerrada)",
+      "description": "rodada atual de perguntas (máx. 2; 3 = encerrada ou em complemento)",
       "maximum": 3,
       "minimum": 1,
       "title": "Rodada",
@@ -254,6 +254,12 @@
     "pronto": {
       "description": "true: não há mais perguntas; chamar POST /contrato",
       "title": "Pronto",
+      "type": "boolean"
+    },
+    "complemento": {
+      "default": false,
+      "description": "true: as perguntas são só dos itens obrigatórios que ainda faltam, depois das 2 rodadas (roteiro fixo, sem IA)",
+      "title": "Complemento",
       "type": "boolean"
     },
     "segmentos": {
@@ -332,5 +338,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/EstadoEntrevista.schema.json",
-  "x-versao-contrato": "1.2.0"
+  "x-versao-contrato": "1.3.0"
 }

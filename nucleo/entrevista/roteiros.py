@@ -34,6 +34,25 @@ ROTEIROS = {
 }
 
 
+# Pergunta fixa de cada slot (texto, dica): roteiro sem IA, slot que o LLM esqueceu e rodada de complemento.
+PERGUNTA_SLOT = {
+    "onde_ocorre": ("Em qual tela ou funcionalidade isso acontece?", "Ex.: menu Cadastro > Alienação, botão Salvar."),
+    "o_que_aconteceu": ("O que aconteceu exatamente? Copie a mensagem de erro, se houver.", None),
+    "como_reproduzir": ("Quais passos levam ao problema?", "Ex.: 1) abrir a tela X; 2) informar Y; 3) clicar em Z."),
+    "desde_quando_quem": ("Desde quando acontece e quem é afetado?", "Só você, sua área ou todos os usuários?"),
+    "funcionalidade": ("Qual funcionalidade será alterada?", "Use o nome do menu ou da tela."),
+    "o_que_muda": ("O que deve mudar no comportamento atual?", None),
+    "exemplo_concreto": ("Dê um exemplo concreto, com valores.", "Ex.: para o contrato X, o valor deveria ser Y e hoje é Z."),
+    "fora_de_escopo": ("O que NÃO faz parte deste pedido?", "Se nada, responda 'nada'."),
+    "outros_sistemas": ("As informações vêm de outro sistema ou precisam ser gravadas em outro sistema?",
+                        "Ex.: Benner, SEI, banco. Se não, responda 'não'."),
+    "quem_usa": ("Quem vai usar a nova funcionalidade?", "Área ou perfil de usuário."),
+    "informacoes_guardadas": ("Que informações a funcionalidade vai guardar?", "Liste os campos principais."),
+    "o_que_faz": ("O que a funcionalidade faz com essas informações?", None),
+}
+MAX_PERGUNTAS_COMPLEMENTO = 5
+
+
 TRIVIAIS = {"ok", "okay", "sim", "s", "certo", "correto", "isso", "isso mesmo", "beleza", "blz", "entendi", "não sei", "nao sei",
             "sei lá", "sei la", "talvez", "?", "-", "x", "a", "teste"}
 
@@ -72,6 +91,16 @@ def revalida(seg: Segmento) -> Segmento:
 def faltando(segmentos):
     return [SlotFaltando(segmento=s.n, slot=x.codigo, rotulo=x.rotulo)
             for s in segmentos for x in s.slots if x.obrigatorio and not x.preenchido]
+
+
+def perguntas_complemento(segmentos, n):
+    """Rodada de complemento (1.3.0), depois das 2 rodadas: só as perguntas fixas dos itens obrigatórios que faltam, na ordem de
+    `faltando`, no máximo 5. Sem gatilho e sem a decisão da regra documentada. `n` (contador de complementos) deixa os ids únicos."""
+    out = []
+    for i, f in enumerate(faltando(segmentos)[:MAX_PERGUNTAS_COMPLEMENTO], 1):
+        texto, dica = PERGUNTA_SLOT[f.slot]
+        out.append(dict(id=f"c{n}p{i}", segmento=f.segmento, slot=f.slot, texto=texto, dica=dica))
+    return out
 
 
 def roteiro_da_intencao(intencao):

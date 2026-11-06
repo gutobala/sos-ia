@@ -175,9 +175,36 @@ def test_rodadas_respostas_e_limite(ambiente):
     assert s["como_reproduzir"].preenchido and s["o_que_aconteceu"].preenchido
     assert e2.rodada == 2 and [p.slot for p in e2.perguntas] == ["desde_quando_quem"]
     e3 = mot.responder(e2.id, Respostas(respostas=[Resposta(id=e2.perguntas[0].id, texto="ok")]))   # curto demais: segue vazio
-    assert e3.pronto and e3.rodada == 3 and not e3.perguntas                       # 2 rodadas no máximo, sem 3ª chamada
+    # 2 rodadas do LLM no máximo; o que falta vira complemento (pergunta fixa), sem 3ª chamada
+    assert e3.rodada == 3 and e3.complemento and not e3.pronto
+    assert [(p.slot, p.id) for p in e3.perguntas] == [("desde_quando_quem", "c1p1")]
     assert len(f.prompts) == 2
-    assert not mot.obter(e.id).perguntas
+    assert mot.obter(e.id).complemento
+
+
+def test_complemento_sem_llm_ate_completar(ambiente):
+    """Depois das 2 rodadas: só o que falta, sem chamar o LLM, com evento `complemento` e analise_ia preservado."""
+    mot, usa = ambiente
+    f = usa(resp_entrevista(slots={"onde_ocorre": "Tela de contratos, botão Salvar"}), resp_entrevista())
+    e = mot.criar(nova())
+    e = mot.responder(e.id, Respostas(respostas=[Resposta(id=p.id, texto="ok") for p in e.perguntas]))
+    e = mot.responder(e.id, Respostas(respostas=[Resposta(id=p.id, texto="ok") for p in e.perguntas]))
+    assert e.complemento and not e.pronto and e.analise_ia and len(f.prompts) == 2
+    assert {p.slot for p in e.perguntas} == {"o_que_aconteceu", "como_reproduzir", "desde_quando_quem"}
+    assert all(p.id.startswith("c1p") for p in e.perguntas)
+    e = mot.responder(e.id, Respostas(respostas=[Resposta(id=p.id, texto="sim") for p in e.perguntas]))   # raso de novo
+    assert e.complemento and {p.slot for p in e.perguntas} == {"o_que_aconteceu", "como_reproduzir", "desde_quando_quem"}
+    assert all(p.id.startswith("c2p") for p in e.perguntas)                       # ids novos a cada complemento
+    resp = {"o_que_aconteceu": "Aparece a mensagem HTTP 500 e nada é gravado", "como_reproduzir": "1) abrir o contrato 123; 2) Salvar",
+            "desde_quando_quem": "Desde ontem, todos os usuários"}
+    e = mot.responder(e.id, Respostas(respostas=[Resposta(id=p.id, texto=resp[p.slot]) for p in e.perguntas]))
+    assert e.pronto and not e.complemento and not e.perguntas and e.rodada == 3 and e.analise_ia
+    assert len(f.prompts) == 2                                                     # o complemento nunca chamou o LLM
+    with db.db_app() as c:
+        row = c.execute("SELECT situacao, rodada FROM app.entrevista WHERE id = %s", (e.id,)).fetchone()
+        tipos = [r["tipo"] for r in c.execute("SELECT tipo FROM app.entrevista_evento WHERE entrevista_id = %s ORDER BY id", (e.id,))]
+    assert row["situacao"] == "PRONTA" and row["rodada"] == 3
+    assert tipos.count("complemento") == 2 and tipos.count("respostas") == 2 and "fallback" not in tipos
 
 
 def test_fallback_sem_llm(ambiente, monkeypatch):

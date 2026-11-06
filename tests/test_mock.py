@@ -85,7 +85,7 @@ def test_no_maximo_duas_rodadas():
     assert e["rodada"] == 2 and not e["pronto"]
     e = c.post(f"/entrevistas/{e['id']}/respostas", headers=H, json={"respostas": [{"id": e["perguntas"][0]["id"], "texto": "x"}]}).json()
     valida("EstadoEntrevista", e)
-    assert e["pronto"] and not e["perguntas"]
+    assert e["rodada"] == 3 and e["complemento"] and not e["pronto"]       # 1.3.0: faltando item, vira complemento
 
 
 def test_slot_raso_bloqueia_contrato():
@@ -123,6 +123,57 @@ def test_entrevista_inexistente():
     r = c.post("/entrevistas/nao-existe/contrato", headers=H)
     assert r.status_code == 404
     valida("Erro", r.json())
+
+
+# ---------------------------------------------------------------- complemento (1.3.0)
+def responde(e, textos):
+    """textos: str para todas as perguntas, ou {slot: texto}."""
+    corpo = [{"id": p["id"], "texto": textos if isinstance(textos, str) else textos[p["slot"]]} for p in e["perguntas"]]
+    r = c.post(f"/entrevistas/{e['id']}/respostas", headers=H, json={"respostas": corpo})
+    assert r.status_code == 200, r.text
+    return valida("EstadoEntrevista", r.json())
+
+
+CORRETIVO_OK = {"onde_ocorre": "Tela de alienação, botão Salvar", "como_reproduzir": "1) abrir o contrato 123; 2) clicar em Salvar",
+                "desde_quando_quem": "Desde ontem, todos os usuários", "o_que_aconteceu": "Aparece HTTP 500 e nada é gravado",
+                "gatilho": "só consulta"}
+
+
+def test_complemento_depois_das_duas_rodadas():
+    e = nova("Ao salvar a alienação aparece HTTP 500 e nada é gravado.")
+    assert not e["complemento"]
+    e = responde(e, "ok")
+    assert e["rodada"] == 2 and not e["complemento"]
+    e = responde(e, "ok")
+    assert e["rodada"] == 3 and e["complemento"] and not e["pronto"]
+    slots = [p["slot"] for p in e["perguntas"]]
+    assert slots == ["onde_ocorre", "como_reproduzir", "desde_quando_quem"] and "gatilho" not in slots
+    ids = {p["id"] for p in e["perguntas"]}
+    e = responde(e, "sim")                                                   # raso de novo: mesmas perguntas, ids novos
+    assert e["complemento"] and [p["slot"] for p in e["perguntas"]] == slots and not ids & {p["id"] for p in e["perguntas"]}
+    e = responde(e, CORRETIVO_OK)
+    assert e["pronto"] and not e["complemento"] and not e["perguntas"] and e["rodada"] == 3
+    k = valida("Contrato", c.post(f"/entrevistas/{e['id']}/contrato", headers=H).json())
+    assert k["pode_confirmar"] and not k["faltando"]
+    assert confirma(k["id"], escopo_de(k)).status_code == 200
+
+
+def test_complemento_nunca_em_entrevista_completa():
+    e = nova("Ao salvar a alienação aparece HTTP 500 e nada é gravado.")
+    e = responde(e, CORRETIVO_OK)
+    assert e["pronto"] and not e["complemento"]
+    assert not valida("EstadoEntrevista", c.get(f"/entrevistas/{e['id']}", headers=H).json())["complemento"]
+
+
+def test_complemento_nao_pergunta_sobre_a_regra():
+    e = nova("O sistema não permite gerar o boleto do contrato 123.")
+    assert e["regra_documentada"] and e["decisao_regra"] is None
+    e = responde(responde(e, "ok"), "ok")
+    assert e["complemento"] and "decisao_regra" not in [p["slot"] for p in e["perguntas"]]
+    e = responde(e, CORRETIVO_OK)
+    assert e["pronto"] and not e["complemento"]
+    k = valida("Contrato", c.post(f"/entrevistas/{e['id']}/contrato", headers=H).json())
+    assert [f["slot"] for f in k["faltando"]] == ["decisao_regra"]           # a regra continua pendente, tratada à parte
 
 
 # ---------------------------------------------------------------- confirmação (1.2.0)

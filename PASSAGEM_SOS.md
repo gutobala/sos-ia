@@ -1,10 +1,12 @@
 # sos-ia → sessão do SOS: o que mudou e o que o SOS precisa fazer (06/11/2026)
 
 O serviço sos-ia (núcleo da abertura de chamados com IA) está pronto para a integração. O motor real da entrevista funciona de
-ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.2.0** (aditivo sobre a 1.1.0:
+ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.3.0** (aditivo sobre a 1.2.0:
 nenhum campo ou rota existente mudou de significado). Os JSON Schemas de cada endpoint ficam em `contrato_api/`, com o
 `openapi.json`.
 
+**Novo na 1.3.0:** a rodada de complemento (seção 4.6). Depois das 2 rodadas, a entrevista não se encerra mais com item
+obrigatório faltando: o usuário não precisa recomeçar.
 **Novo na 1.2.0:** a confirmação do Escopo do Pedido (seção 4.5). É o que o `confirmarAbertura.asp` usa.
 
 ## 1. Como subir
@@ -142,9 +144,31 @@ Saída (`EscopoConfirmado`):
 cd_usuario, criado_em, conteudo}]}`. Versão 0 = gerada pela IA, 1 = confirmada pelo usuário (2+ ficam para a Sustentação). 404 se
 o chamado não veio do fluxo novo.
 
+### 4.6 Rodada de complemento (novo na 1.3.0) — `novaAbertura.asp`
+**Problema que resolve:** antes, depois da 2ª rodada a entrevista se encerrava (`pronto=true`) mesmo com item obrigatório
+faltando. O `/contrato` voltava com `pode_confirmar=false`, o `/confirmacao` recusava, e o `/respostas` não aceitava mais nada.
+Bastava um "ok" num item obrigatório para o usuário só ter a opção de recomeçar.
+
+**Agora:** depois das 2 rodadas, se ainda faltar item obrigatório, o `POST /respostas` devolve `pronto=false`,
+**`complemento=true`** e perguntas **só dos itens que faltam**:
+- são as perguntas fixas do roteiro, sem IA: resposta imediata, custo zero, funciona com o LLM fora do ar;
+- no máximo 5 por vez; nunca pergunta de gatilho, nunca a decisão da regra documentada (essa continua no painel da regra +
+  `POST /regra`);
+- respondidas pelo mesmo `POST /entrevistas/{id}/respostas`, com as mesmas regras ("ok", "sim", "não sei" continuam não contando);
+- **sem limite de rodadas**: se a resposta for rasa de novo, volta `complemento=true` com as mesmas perguntas e **ids novos**
+  (`c1p1`, `c2p1`...). O usuário sai quando responder de verdade ou quando usar "Recomeçar";
+- quando não falta nada: `pronto=true`, `complemento=false`, e o fluxo segue igual (`/contrato` → `/confirmacao`).
+
+`rodada` fica em 3 durante o complemento. `complemento` também vem no `GET /entrevistas/{id}` (retomar).
+
+**O que muda na tela:** com `complemento=true`, troque o título das perguntas por "Para concluir, faltam estas informações" (em
+vez de "rodada X de 2"), e o aviso do Escopo do Pedido sobre item faltando deixa de mandar recomeçar. Nada muda no proxy.
+
 ## 5. Regras do fluxo (determinísticas, não dependem do LLM)
-- No máximo **2 rodadas** de perguntas e **5 perguntas** por rodada. `pronto=true` → chamar `/contrato`.
-- `rodada=3` significa entrevista encerrada.
+- No máximo **2 rodadas** de perguntas do LLM e **5 perguntas** por rodada. `pronto=true` → chamar `/contrato`.
+- Depois das 2 rodadas, se ainda faltar item obrigatório: rodadas de complemento até completar (4.6). `pronto=true` só quando não
+  falta item obrigatório (a decisão da regra documentada é tratada à parte).
+- `rodada=3`: as 2 rodadas acabaram (entrevista encerrada, ou em complemento quando `complemento=true`).
 - Pedido misto vem com até 3 segmentos. **Os chamados não são por segmento, e sim por tipo** (no máximo 2: um corretivo e um
   evolutivo; os segmentos evolutivos vão juntos no mesmo chamado). Quem agrupa é o `POST /confirmacao` (4.5).
 - `faltando` e `pode_confirmar` do contrato são calculados por regra fixa, por roteiro:
@@ -164,6 +188,7 @@ O mock reage a palavras do relato:
 - "não permite", "não deixa" ou "bloque…" num `PAROU_DE_FUNCIONAR` → regra documentada de exemplo, e o `/regra` funciona como no real;
 - `MUDAR_EXISTENTE` → 2 candidatos de exemplo.
 - A confirmação (4.5) segue as mesmas regras do motor real, em memória: um relato misto ("… e também …") gera 2 grupos.
+- O complemento (4.6) também: responda "ok" nas 2 rodadas para ver `complemento=true`.
 
 No mock, `analise_ia` é sempre `false`. O estado do mock some quando o container reinicia.
 

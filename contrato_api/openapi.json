@@ -964,7 +964,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.2.0"
+            "default": "1.3.0"
           },
           "situacao": {
             "type": "string",
@@ -1009,7 +1009,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.2.0"
+            "default": "1.3.0"
           },
           "titulo": {
             "type": "string",
@@ -1278,7 +1278,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.2.0"
+            "default": "1.3.0"
           },
           "situacao": {
             "type": "string",
@@ -1410,19 +1410,25 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.2.0"
+            "default": "1.3.0"
           },
           "rodada": {
             "type": "integer",
             "maximum": 3.0,
             "minimum": 1.0,
             "title": "Rodada",
-            "description": "rodada atual de perguntas (máx. 2; 3 = encerrada)"
+            "description": "rodada atual de perguntas (máx. 2; 3 = encerrada ou em complemento)"
           },
           "pronto": {
             "type": "boolean",
             "title": "Pronto",
             "description": "true: não há mais perguntas; chamar POST /contrato"
+          },
+          "complemento": {
+            "type": "boolean",
+            "title": "Complemento",
+            "description": "true: as perguntas são só dos itens obrigatórios que ainda faltam, depois das 2 rodadas (roteiro fixo, sem IA)",
+            "default": false
           },
           "segmentos": {
             "items": {
@@ -1886,7 +1892,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.2.0"
+            "default": "1.3.0"
           },
           "mock": {
             "type": "boolean",

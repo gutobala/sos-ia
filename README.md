@@ -42,7 +42,7 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
 - Cabeçalho obrigatório (menos em `/saude`): `X-SOSIA-Token: mock` (em produção: valor de `SOSIA_TOKEN`).
 - Respostas sempre `application/json; charset=utf-8`; erros sempre no formato `Erro` `{erro, detalhe}`.
 
-## Contrato da API (versão 1.2.0) — `contrato_api/`
+## Contrato da API (versão 1.3.0) — `contrato_api/`
 | Rota | Entrada | Saída |
 |---|---|---|
 | `GET /saude` | — | `Saude` (o SOS decide IA × roteiro fixo por `ok`) |
@@ -62,7 +62,10 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
 - Slots obrigatórios e mínimos: `nucleo/entrevista/roteiros.py` (o `confirmarAbertura.asp` deve repetir a mesma regra).
 - Pergunta com `slot="gatilho"`: pergunta de complexidade oculta (integração, gravar × exibir...); a resposta não preenche slot,
   vai para `duvidas` do contrato.
-- Máximo de 2 rodadas; depois `pronto=true` mesmo com slot faltando (o contrato mostra `faltando`).
+- Máximo de 2 rodadas do LLM. **Complemento (1.3.0):** depois delas, se ainda faltar item obrigatório, a entrevista não se
+  encerra: `complemento=true` e só as perguntas fixas do que falta (`roteiros.perguntas_complemento`; sem IA, sem gatilho, sem a
+  decisão da regra, no máximo 5, ids `c{n}p{i}`), repetidas até completar. Evento `complemento`; `analise_ia` não muda.
+  Plano: `docs\sosia-1.3.0-complemento.md`.
 - **Regra documentada (1.1.0):** quando vier `regra_documentada` com `decisao_regra=null`, o SOS mostra o trecho e a `orientacao` e
   pergunta ao usuário se o sistema está seguindo essa regra. O segmento fica `CORRETIVO` até a decisão.
   - `aceita=true`: o usuário quer mudar a regra. O segmento 1 vira `EVOLUTIVO_EXISTENTE` e ganha mais uma rodada de perguntas;
@@ -124,7 +127,7 @@ só no histórico de complexidade da Fase 3. Depois de recriar o `sosia` com `ex
 - **Determinístico, nunca do LLM:**
   - os slots são revalidados pelo roteiro; respostas triviais como "ok", "sim" ou "não sei" não contam (`roteiros.conteudo`);
   - perguntas só para slot vazio ou gatilho detectado, no máximo 5; slot vazio que o LLM esqueceu ganha a pergunta fixa;
-  - no máximo 2 rodadas;
+  - no máximo 2 rodadas do LLM; depois, complemento com as perguntas fixas do que falta (1.3.0);
   - a regra documentada só aparece se o trecho veio do RAG e for regra, mensagem ou caso de uso;
   - `faltando` e `pode_confirmar`.
 - **Estado no banco da aplicação** (desde a 1.2.0, `sosia_app`: `app.entrevista`, `app.entrevista_evento`,

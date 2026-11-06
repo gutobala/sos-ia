@@ -5,8 +5,9 @@ Fluxo (contrato em modelos.py; plano do SOS em leia-o-sistema-de-floating-shell.
              regras de negócio e catálogo de funções) → gatilhos ocultos (config/gatilhos.yaml) → LLM (prompts/entrevista_v1.md)
              → slots revalidados pelo roteiro, perguntas filtradas (só slot vazio ou gatilho, máx. 5), regra documentada só se o
              trecho veio do RAG → grava no banco (apf.entrevista / entrevista_evento).
-  responder  respostas entram nos slots (anonimizadas no modo local) → nova rodada do LLM enquanto faltar slot e rodada ≤ 2;
-             depois disso, pronto=true.
+  responder  respostas entram nos slots (anonimizadas, menos no modo contrato) → nova rodada do LLM enquanto faltar slot e
+             rodada ≤ 2. Depois disso (1.3.0), se ainda faltar item obrigatório, rodada de complemento: só as perguntas fixas do
+             que falta (roteiros.perguntas_complemento), sem LLM e sem limite; quando não falta nada, pronto=true.
   regra      (contrato 1.1.0) a regra documentada NÃO muda o tipo sozinha: o segmento 1 fica CORRETIVO até o usuário decidir
              (POST /regra). Aceita → vira EVOLUTIVO_EXISTENTE e ganha mais uma rodada de perguntas; recusa → segue corretivo e o
              comentário vai para as dúvidas. Enquanto não decidir, `faltando` traz o slot "decisao_regra".
@@ -354,7 +355,8 @@ class Motor:
             candidatos_funcionalidade=[CandidatoFuncionalidade(nome=c["nome"], tipo_ifpug=c.get("tipo_ifpug"), similaridade=c["similaridade"],
                                                                trecho=c.get("modulo") or None) for c in est["candidatos"]],
             regra_documentada=RegraDocumentada.model_validate(est["regra"]) if est.get("regra") else None,
-            decisao_regra=est.get("decisao"), perguntas=[Pergunta.model_validate(p) for p in est["perguntas"]], nota=est["nota"], dicas_medidor=est["dicas"],
+            decisao_regra=est.get("decisao"), perguntas=[Pergunta.model_validate(p) for p in est["perguntas"]],
+            complemento=bool(est.get("complemento") and est["perguntas"]), nota=est["nota"], dicas_medidor=est["dicas"],
             analise_ia=analise_ia)
 
     def _carrega(self, conn, eid):
@@ -423,13 +425,21 @@ class Motor:
                               for x in s.slots]
                         segs[i] = roteiros.revalida(s.model_copy(update={"slots": sl}))
             est["segs"] = [s.model_dump(mode="json") for s in segs]
-            armazem.evento(app, eid, est["rodada"], "respostas", conteudo=[dict(id=r.id, car=len(r.texto)) for r in resp.respostas])
-            est["rodada"] += 1
-            ia = row["analise_ia"]
-            if est["rodada"] > MAX_RODADAS or (not roteiros.faltando(segs) and not _pendentes(est)):
-                est["perguntas"] = []
+            armazem.evento(app, eid, est["rodada"], "complemento" if est.get("complemento") else "respostas",
+                           conteudo=[dict(id=r.id, car=len(r.texto)) for r in resp.respostas])
+            est["rodada"] = min(est["rodada"] + 1, MAX_RODADAS + 1)     # fica em 3 durante o complemento
+            ia = row["analise_ia"]                                        # o complemento não mexe em analise_ia (não é falha do LLM)
+            falta = roteiros.faltando(segs)
+            if est["rodada"] > MAX_RODADAS or (not falta and not _pendentes(est)):
+                # 1.3.0: depois das 2 rodadas, se ainda faltar item obrigatório, rodada de complemento (perguntas fixas, sem LLM)
+                est["complemento"] = est["rodada"] > MAX_RODADAS and bool(falta)
+                if est["complemento"]:
+                    est["complementos"] = est.get("complementos", 0) + 1
+                    est["perguntas"] = roteiros.perguntas_complemento(segs, est["complementos"])
+                else:
+                    est["perguntas"] = []
                 est["nota"] = nota(segs, est["nota"])
-                est["dicas"] = [f"Falta: {f.rotulo}" for f in roteiros.faltando(segs)][:3]
+                est["dicas"] = [f"Falta: {f.rotulo}" for f in falta][:3]
             else:
                 ia = self._rodada(app, eid, est) and ia
             est["contrato"] = None
@@ -468,6 +478,7 @@ class Motor:
                         x.model_copy(update={"valor": com}) if x.codigo == "o_que_muda" else x for x in novo.slots]}))
                 est["segs"] = [s.model_dump(mode="json") for s in [novo] + segs[1:]]
                 est["rodada"] = min(est["rodada"], MAX_RODADAS)  # mudou de roteiro: mais uma rodada de perguntas
+                est["complemento"] = False                       # essa rodada é do LLM; se ainda faltar depois, volta o complemento
                 armazem.evento(app, eid, est["rodada"], "decisao_regra", conteudo=dict(aceita=True))
                 ia = self._rodada(app, eid, est) and ia
             else:
