@@ -32,6 +32,16 @@ fixa (`motor.aplica`) nem chegou a ser testada.
 negócio acima **explica claramente** o comportamento que o usuário relatou". A RN13 descreve a **causa** (prestamista no SERASA),
 o relato descreve o **efeito** (boleto bloqueado), e o usuário não disse nada sobre SERASA: o LLM preferiu 0.
 
+**Repetido com acentos** (06/11/2026, a pedido do SOS: os relatos do passo 6 foram escritos sem acento de propósito, pelo script
+de teste em ASCII; o caminho SOS → serviço preserva os acentos, conferido): "Não consigo emitir o boleto bancário da alienação do
+prestamista 2023/0110. O sistema bloqueia a emissão do boleto e não gera nada."
+- A busca deu praticamente os mesmos 7 trechos (RN239 em [1] com cos 0,604; RN13 de novo em [6] com 0,601).
+- Desta vez o LLM **apontou** o trecho 1 (**RN239**), com a orientação "Pela regra documentada, o sistema verifica se a alienação
+  está bloqueada ou liberada para emissão de boleto em alguns tipos de baixa. Se a regra precisa mudar…".
+- Leitura: a busca está estável; **a decisão do LLM não**. Sem acento: 0 nas 2 execuções; com acento: RN239 em 1 execução.
+  Isso reforça medir com repetições, e a questão RN13 × RN239 do item 2.2 deixa de ser hipotética. A orientação da RN239 também
+  ficou genérica ("em alguns tipos de baixa"), sem explicar a ligação com o relato.
+
 Controle negativo (deve continuar **sem** regra): "O sistema nao deixa alterar o contrato de alienacao depois que a primeira
 parcela foi paga…" — não existe RN sobre isso no GAI.
 
@@ -67,7 +77,8 @@ Não mudar o que é determinístico: só trecho vindo do RAG, só tipos `regras_
 | Falso alarme | relatos "sem regra" em que alguma regra foi apontada | **≤ 1 em 10** (mais importante: atrapalha um corretivo legítimo) |
 | Sensibilidade | relatos "com regra" em que a regra certa (ou uma aceitável) foi apontada | maior que a do prompt atual (medir o atual também) |
 | Orientação | as apontadas têm orientação condicional que explica a ligação | todas |
-| Casos do SOS | boleto 2023/0110 → RN13 (ou RN239, se aceitável); parcela paga → nenhuma | os dois |
+| Casos do SOS | boleto 2023/0110 → RN13 (ou RN239, se aceitável); parcela paga → nenhuma | os dois, na maioria das 3 repetições |
+| Estabilidade | relatos em que as 3 repetições não concordam | relatar; menor que a do prompt atual |
 
 Custo esperado: ~US$ 0,005 por chamada com o `gpt-5.4-mini`; 20 relatos × 3 repetições × 2 prompts ≈ US$ 0,60.
 
