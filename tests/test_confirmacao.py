@@ -1,13 +1,15 @@
 """Regras puras da confirmação do Escopo do Pedido (contrato 1.2.0): sem banco, sem LLM, sem API."""
 import pytest
 
-from nucleo.entrevista import confirmacao as cf
+from nucleo.entrevista import confirmacao as cf, roteiros
 from nucleo.entrevista.modelos import (Contrato, DecisaoRegra, EscopoEditado, Integracao, RegraDocumentada, Segmento, SlotFaltando,
                                        VinculoChamados)
 
 
-def contrato(*tipos, faltando=(), regra=None, decisao=None):
-    segs = [Segmento(n=i, tipo=t, resumo=f"seg {i}", slots=[]) for i, t in enumerate(tipos, 1)]
+def contrato(*tipos, faltando=(), regra=None, decisao=None, valores=None):
+    """valores: {n do segmento: {slot: valor}} para a seção INFORMAÇÕES DO PEDIDO."""
+    valores = valores or {}
+    segs = [Segmento(n=i, tipo=t, resumo=f"seg {i}", slots=roteiros.slots_vazios(t, valores.get(i))) for i, t in enumerate(tipos, 1)]
     return Contrato(id="e1", titulo="t", objetivo="o", requisitos=[], fora_escopo=[], duvidas=[], integracoes=[], segmentos=segs,
                     regra_documentada=regra, decisao_regra=decisao, nota=80, faltando=list(faltando), pode_confirmar=not faltando,
                     analise_ia=True)
@@ -56,6 +58,48 @@ def test_texto_com_as_secoes_e_a_referencia_ao_outro_chamado():
     # regra recusada não vai para o chamado
     k2 = contrato("CORRETIVO", regra=REGRA, decisao=DecisaoRegra.RECUSADA)
     assert "REGRA DOCUMENTADA" not in cf.monta_grupos(k2, escopo(1))[0].texto and cf.regra_aceita(k2) is None
+
+
+CORRETIVO = {"desde_quando_quem": "desde segunda, toda a GEVEN", "onde_ocorre": "Tela de alienação, botão Salvar",
+             "como_reproduzir": "1) abrir a alienação; 2) informar o contrato; 3) Salvar",
+             "o_que_aconteceu": "aparece HTTP 500 e nada é gravado"}
+
+
+def test_informacoes_do_pedido_no_corretivo_na_ordem_do_roteiro():
+    t = cf.monta_grupos(contrato("CORRETIVO", valores={1: CORRETIVO}), escopo(1))[0].texto
+    assert t.startswith("OBJETIVO\nVoltar a salvar e mostrar a multa.\n\nINFORMAÇÕES DO PEDIDO\n"
+                        "Onde ocorre (sistema, tela ou funcionalidade): Tela de alienação, botão Salvar\n"
+                        "O que aconteceu (mensagem, comportamento): aparece HTTP 500 e nada é gravado\n"
+                        "Como reproduzir (passo a passo): 1) abrir a alienação; 2) informar o contrato; 3) Salvar\n"
+                        "Desde quando e quem é afetado: desde segunda, toda a GEVEN\n\nPROBLEMAS A CORRIGIR\n1. ")
+    assert "Parte " not in t                                                      # um segmento só: sem subtítulo
+
+
+def test_informacoes_do_evolutivo_com_duas_partes_sem_fora_de_escopo():
+    k = contrato("CORRETIVO", "EVOLUTIVO_EXISTENTE", "EVOLUTIVO_NOVO",
+                 valores={1: CORRETIVO, 2: {"funcionalidade": "Relatório de pagamentos", "fora_de_escopo": "Não mexer no boleto",
+                                            "o_que_muda": "x" * 2000},
+                          3: {"quem_usa": "Gerência de vendas", "outros_sistemas": "não"}})
+    corr, evol = cf.monta_grupos(k, escopo(1, 2, 3))
+    t = evol.texto
+    assert "Parte 1 - Alteração no que já existe: seg 2\nFuncionalidade que será alterada: Relatório de pagamentos\n" in t
+    assert "Parte 2 - Funcionalidade nova: seg 3\nQuem vai usar: Gerência de vendas\n" in t
+    assert "Não mexer no boleto" not in t and "O que fica fora do escopo" not in t
+    linha = next(x for x in t.splitlines() if x.startswith("O que muda: "))
+    assert len(linha) == len("O que muda: ") + cf.MAX_VALOR_INFO                     # 2.000 caracteres cortados em 600
+    assert "Tela de alienação" not in t and "Relatório de pagamentos" not in corr.texto   # cada grupo só com os seus segmentos
+
+
+def test_sem_informacoes_quando_nenhum_item_tem_valor():
+    t = cf.monta_grupos(contrato("CORRETIVO"), escopo(1))[0].texto
+    assert "INFORMAÇÕES DO PEDIDO" not in t and t.startswith("OBJETIVO\nVoltar a salvar e mostrar a multa.\n\nPROBLEMAS A CORRIGIR")
+
+
+def test_criterio_fixo_nunca_e_como_reproduzir():
+    assert roteiros.criterio_fixo("CORRETIVO", {"como_reproduzir": "1) abrir; 2) salvar"}) == roteiros.CRITERIO_CORRETIVO
+    assert roteiros.criterio_fixo("EVOLUTIVO_NOVO", {"exemplo_concreto": " contrato 9 deve dar 10 "}) == \
+        "Conferir com o exemplo: contrato 9 deve dar 10"
+    assert roteiros.criterio_fixo("EVOLUTIVO_EXISTENTE", {"exemplo_concreto": None}) == "Definir com o usuário."
 
 
 def test_segmento_inexistente_e_faltando():

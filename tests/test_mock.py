@@ -176,6 +176,26 @@ def test_complemento_nao_pergunta_sobre_a_regra():
     assert [f["slot"] for f in k["faltando"]] == ["decisao_regra"]           # a regra continua pendente, tratada à parte
 
 
+# ---------------------------------------------------------------- texto do chamado (1.3.1)
+def test_criterio_fixo_e_informacoes_do_pedido_no_texto():
+    e = responde(nova("Ao salvar a alienação aparece HTTP 500 e nada é gravado."), CORRETIVO_OK)
+    k = valida("Contrato", c.post(f"/entrevistas/{e['id']}/contrato", headers=H).json())
+    crit = k["requisitos"][0]["criterio_aceite"]
+    assert crit == "Ao repetir os passos informados, a operação é concluída sem o erro relatado."
+    assert CORRETIVO_OK["como_reproduzir"] not in crit
+    g = valida("EscopoConfirmado", confirma(k["id"], escopo_de(k)).json())["grupos"][0]
+    t = g["texto"]
+    assert "INFORMAÇÕES DO PEDIDO\nOnde ocorre (sistema, tela ou funcionalidade): Tela de alienação, botão Salvar\n" in t
+    assert "Como reproduzir (passo a passo): 1) abrir o contrato 123; 2) clicar em Salvar" in t
+    assert t.index("INFORMAÇÕES DO PEDIDO") < t.index("PROBLEMAS A CORRIGIR")
+
+    e = nova("Quero mudar o cálculo do desconto da venda direta.", intencao="MUDAR_EXISTENTE")
+    e = responde(e, {"funcionalidade": "Venda direta, cálculo do desconto", "exemplo_concreto": "Contrato 9: desconto de 10% e não 5%",
+                     "fora_de_escopo": "nada", "outros_sistemas": "não", "o_que_muda": "desconto passa a ser de 10%"})
+    k = valida("Contrato", c.post(f"/entrevistas/{e['id']}/contrato", headers=H).json())
+    assert k["requisitos"][0]["criterio_aceite"] == "Conferir com o exemplo: Contrato 9: desconto de 10% e não 5%"
+
+
 # ---------------------------------------------------------------- confirmação (1.2.0)
 def pronta(relato, intencao="PAROU_DE_FUNCIONAR"):
     """Entrevista respondida até o fim e com o contrato gerado e confirmável."""

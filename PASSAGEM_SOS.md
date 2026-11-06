@@ -1,9 +1,14 @@
 # sos-ia → sessão do SOS: o que mudou e o que o SOS precisa fazer (06/11/2026)
 
 O serviço sos-ia (núcleo da abertura de chamados com IA) está pronto para a integração. O motor real da entrevista funciona de
-ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.3.0** (aditivo sobre a 1.2.0:
+ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.3.1** (aditivo sobre a 1.2.0:
 nenhum campo ou rota existente mudou de significado). Os JSON Schemas de cada endpoint ficam em `contrato_api/`, com o
 `openapi.json`.
+
+**Correção 1.3.1 (o SOS não muda nada):** o `texto` de cada grupo da confirmação ganhou a seção **INFORMAÇÕES DO PEDIDO**, logo
+depois de OBJETIVO, com as respostas da entrevista daquele chamado (onde ocorre, como reproduzir, desde quando/quem...; cada uma
+com até 600 caracteres). Sem LLM, o critério de aceite deixou de repetir o "como reproduzir": no corretivo é uma frase fixa, e no
+evolutivo, "Conferir com o exemplo: ...". O texto já vem pronto para o `DS_SOLICITACAO` e para o e-mail do solicitante.
 
 **Novo na 1.3.0:** a rodada de complemento (seção 4.6). Depois das 2 rodadas, a entrevista não se encerra mais com item
 obrigatório faltando: o usuário não precisa recomeçar.
@@ -120,7 +125,7 @@ Saída (`EscopoConfirmado`):
 ```
 - Um item em `grupos` = um chamado a gravar. Ordem fixa: `CORRETIVO` antes de `EVOLUTIVO`.
 - `titulo` → `DS_RESUMO` (até 200). Com 2 grupos ganha o sufixo " (correção)" / " (evolução)".
-- `texto` → `DS_SOLICITACAO`. Já vem com o mais importante primeiro (objetivo, requisitos com critério de aceite, referência ao
+- `texto` → `DS_SOLICITACAO`. Já vem com o mais importante primeiro (objetivo, informações do pedido (1.3.1), requisitos com critério de aceite, referência ao
   outro chamado, fora de escopo, integrações, dúvidas, regra documentada), então pode cortar no limite de bytes (~3900).
 - `n` é a numeração do pedido inteiro, igual nos dois chamados. `natureza`: `CORRECAO` | `ALTERACAO` | `NOVO`.
 - `regra_documentada` só vem quando o usuário aceitou mudar a regra: é o trecho a anexar.

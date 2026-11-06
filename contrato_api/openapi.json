@@ -964,7 +964,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.3.0"
+            "default": "1.3.1"
           },
           "situacao": {
             "type": "string",
@@ -1009,7 +1009,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.3.0"
+            "default": "1.3.1"
           },
           "titulo": {
             "type": "string",
@@ -1278,7 +1278,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.3.0"
+            "default": "1.3.1"
           },
           "situacao": {
             "type": "string",
@@ -1410,7 +1410,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.3.0"
+            "default": "1.3.1"
           },
           "rodada": {
             "type": "integer",
@@ -1892,7 +1892,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.3.0"
+            "default": "1.3.1"
           },
           "mock": {
             "type": "boolean",

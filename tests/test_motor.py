@@ -292,6 +292,21 @@ def test_confirmacao_ponta_a_ponta(ambiente):
         mot.escopo_do_chamado(cd + 1)
 
 
+def test_contrato_fixo_criterio_nunca_e_como_reproduzir(ambiente):
+    """LLM fora no contrato → roteiro fixo: no corretivo, frase fixa; os passos ficam só nos slots (e no texto do chamado)."""
+    from nucleo.entrevista import roteiros
+    mot, usa = ambiente
+    passos = "1) abrir o contrato 123; 2) clicar em Salvar"
+    usa(resp_entrevista(slots={"onde_ocorre": "Tela de contratos, botão Salvar", "como_reproduzir": passos,
+                               "o_que_aconteceu": "Aparece a mensagem HTTP 500 e nada é gravado",
+                               "desde_quando_quem": "Desde ontem, todos os usuários"}),
+        RuntimeError("LLM fora do ar"))
+    e = mot.criar(nova())
+    k = mot.contrato(e.id)
+    assert not k.analise_ia and k.requisitos[0].criterio_aceite == roteiros.CRITERIO_CORRETIVO
+    assert passos not in k.requisitos[0].criterio_aceite
+
+
 def test_id_inexistente(ambiente):
     mot, _ = ambiente
     with pytest.raises(KeyError):

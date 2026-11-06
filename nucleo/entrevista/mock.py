@@ -163,8 +163,7 @@ class MotorMock:
             tipo = TipoRequisito.CORRETIVO if s.tipo == TipoSegmento.CORRETIVO else TipoRequisito.EVOLUTIVO
             desc = v.get(SLOT_PRINCIPAL[s.tipo]) or s.resumo
             reqs.append(RequisitoContrato(n=len(reqs) + 1, tipo=tipo, segmento=s.n, descricao=desc[:500],
-                                          criterio_aceite=(v.get("exemplo_concreto") or v.get("como_reproduzir")
-                                                           or "Definir com o usuário.")[:500]))
+                                          criterio_aceite=roteiros.criterio_fixo(s.tipo, v)[:500]))
         fora = [x.valor for s in segs for x in s.slots if x.codigo == "fora_de_escopo" and x.valor
                 and x.valor.strip().lower() not in ("nada", "não", "nao")]
         integ = []

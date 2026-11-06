@@ -93,6 +93,19 @@ def faltando(segmentos):
             for s in segmentos for x in s.slots if x.obrigatorio and not x.preenchido]
 
 
+CRITERIO_CORRETIVO = "Ao repetir os passos informados, a operação é concluída sem o erro relatado."
+CRITERIO_INDEFINIDO = "Definir com o usuário."
+
+
+def criterio_fixo(tipo, valores):
+    """Critério de aceite do roteiro fixo (sem LLM). Passos para reproduzir não são critério: no corretivo, frase fixa (os passos
+    vão na seção INFORMAÇÕES DO PEDIDO do chamado); no evolutivo, o exemplo concreto, quando houver."""
+    if TipoSegmento(tipo) == TipoSegmento.CORRETIVO:
+        return CRITERIO_CORRETIVO
+    ex = (valores.get("exemplo_concreto") or "").strip()
+    return f"Conferir com o exemplo: {ex}" if ex else CRITERIO_INDEFINIDO
+
+
 def perguntas_complemento(segmentos, n):
     """Rodada de complemento (1.3.0), depois das 2 rodadas: só as perguntas fixas dos itens obrigatórios que faltam, na ordem de
     `faltando`, no máximo 5. Sem gatilho e sem a decisão da regra documentada. `n` (contador de complementos) deixa os ids únicos."""

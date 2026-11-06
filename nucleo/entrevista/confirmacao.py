@@ -63,9 +63,41 @@ def monta_grupos(contrato, escopo: EscopoEditado):
     for t in tipos:
         meus = [r for r in reqs if r.tipo == t]
         outros = [r for r in reqs if r.tipo != t]
+        segs_grupo = [s for s in contrato.segmentos if tipo_requisito(s.tipo) == t]
         grupos.append(GrupoChamado(tipo=t, titulo=titulo(escopo.titulo, t, len(tipos)), requisitos=meus,
-                                   texto=texto(t, escopo, meus, outros, regra)))
+                                   texto=texto(t, escopo, meus, outros, regra, segs_grupo)))
     return grupos
+
+
+MAX_VALOR_INFO = 600          # por item: o SOS corta o texto em ~3.900 bytes e os requisitos não podem ficar de fora
+SLOTS_FORA_DA_INFO = {"fora_de_escopo"}     # já vai na seção FORA DE ESCOPO, editada pelo usuário
+NOME_PARTE = {TipoSegmento.CORRETIVO: "Correção", TipoSegmento.EVOLUTIVO_EXISTENTE: "Alteração no que já existe",
+              TipoSegmento.EVOLUTIVO_NOVO: "Funcionalidade nova"}
+
+
+def informacoes(segmentos):
+    """Linhas da seção INFORMAÇÕES DO PEDIDO: os itens da entrevista ("Rótulo: valor", na ordem do roteiro), sem os vazios e sem
+    o fora de escopo; um subtítulo por segmento quando o grupo tem mais de um. Lista vazia se nenhum item tem valor."""
+    from .roteiros import ROTEIROS
+    blocos = []
+    for s in segmentos:
+        valores = {x.codigo: (x.valor or "").strip() for x in s.slots}
+        rotulos = {x.codigo: x.rotulo for x in s.slots}
+        linhas = []
+        for codigo, rotulo, _ in ROTEIROS[TipoSegmento(s.tipo)]:
+            v = valores.get(codigo)
+            if v and codigo not in SLOTS_FORA_DA_INFO:
+                if len(v) > MAX_VALOR_INFO:
+                    v = v[:MAX_VALOR_INFO - 1].rstrip() + "…"
+                linhas.append(f"{rotulos.get(codigo, rotulo)}: {v}")
+        if linhas:
+            blocos.append((s, linhas))
+    out = []
+    for i, (s, linhas) in enumerate(blocos, 1):
+        if len(segmentos) > 1:
+            out.append(f"Parte {i} - {NOME_PARTE[TipoSegmento(s.tipo)]}: {' '.join(s.resumo.split())}")
+        out += linhas
+    return out
 
 
 def regra_aceita(contrato):
@@ -81,9 +113,13 @@ def titulo(base, tipo, n_grupos):
     return base[:200 - len(suf)].rstrip() + suf
 
 
-def texto(tipo, escopo, reqs, outros, regra=None):
-    """Texto corrido para o DS_SOLICITACAO. O que mais importa vem primeiro: o SOS corta em ~3900 bytes."""
+def texto(tipo, escopo, reqs, outros, regra=None, segmentos=()):
+    """Texto corrido para o DS_SOLICITACAO. O que mais importa vem primeiro: o SOS corta em ~3900 bytes.
+    `segmentos`: os do grupo, para a seção INFORMAÇÕES DO PEDIDO (respostas da entrevista)."""
     L = ["OBJETIVO", escopo.objetivo.strip(), ""]
+    info = informacoes(list(segmentos))
+    if info:
+        L += ["INFORMAÇÕES DO PEDIDO"] + info + [""]
     for nome, nat in SECOES[tipo]:
         rs = [r for r in reqs if r.natureza == nat]
         if rs:

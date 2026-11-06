@@ -628,7 +628,7 @@ def contrato_fixo(est, segs):
         v = {x.codigo: x.valor for x in s.slots}
         reqs.append(dict(segmento=s.n, tipo="CORRETIVO" if s.tipo == TipoSegmento.CORRETIVO else "EVOLUTIVO",
                          descricao=(v.get(SLOT_PRINCIPAL[s.tipo]) or s.resumo)[:1000],
-                         criterio_aceite=(v.get("exemplo_concreto") or v.get("como_reproduzir") or "Definir com o usuário.")[:1000]))
+                         criterio_aceite=roteiros.criterio_fixo(s.tipo, v)[:1000]))
         if v.get("fora_de_escopo") and v["fora_de_escopo"].strip().lower() not in ("nada", "não", "nao"):
             fora.append(v["fora_de_escopo"])
         if v.get("outros_sistemas") and v["outros_sistemas"].strip().lower() not in ("não", "nao", "n"):
