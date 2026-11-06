@@ -63,8 +63,9 @@ Não mudar o que é determinístico: só trecho vindo do RAG, só tipos `regras_
 - **16 a 20 relatos de "bloqueio / mensagem / não deixa"**, metade com regra documentada que explica (causa ou efeito) e metade
   sem. Começar pelo GAI; se der, 1 ou 2 outros sistemas com wiki de regras.
 - Fonte: chamados reais anonimizados (corretivos do SOS em que a solução citou uma RN, ou em que a fábrica respondeu "o sistema
-  funciona conforme a regra"), reescritos como o usuário escreveria, **sem citar a causa**. Incluir o boleto 2023/0110 e a
-  parcela paga.
+  funciona conforme a regra"), reescritos como o usuário escreveria, **sem citar a causa** e **com acentos** (como a tela do
+  SOS envia). Incluir o boleto 2023/0110 e a parcela paga; para esses dois, rodar também a versão sem acento, para ver se isso
+  muda a decisão.
 - Para cada relato: a regra certa (página + seção) ou "nenhuma". Rotular à mão; quando houver dúvida, marcar e deixar fora da
   métrica.
 - Rodar com os **trechos do RAG reais** de cada relato (para medir o sistema inteiro) e, à parte, com os trechos fixos (para
