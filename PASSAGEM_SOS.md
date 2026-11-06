@@ -1,10 +1,14 @@
-# sos-ia → sessão do SOS: o que mudou e o que o SOS precisa fazer (05/11/2026)
+# sos-ia → sessão do SOS: o que mudou e o que o SOS precisa fazer (06/11/2026)
 
 O serviço sos-ia (núcleo da abertura de chamados com IA) está pronto para a integração. O motor real da entrevista funciona de
-ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.1.0**. Os JSON Schemas de cada
-endpoint ficam em `contrato_api/`, com o `openapi.json`.
+ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.2.0** (aditivo sobre a 1.1.0:
+nenhum campo ou rota existente mudou de significado). Os JSON Schemas de cada endpoint ficam em `contrato_api/`, com o
+`openapi.json`.
+
+**Novo na 1.2.0:** a confirmação do Escopo do Pedido (seção 4.5). É o que o `confirmarAbertura.asp` usa.
 
 ## 1. Como subir
+- Uma vez só, antes do primeiro `up`: `docker volume create sosia_app_pgdata` (volume do banco da aplicação, seção 8).
 - `docker compose up -d --build` na raiz do sos-ia. Na primeira vez, o banco é restaurado de `dados\sosia.dump` e demora alguns minutos.
 - A API fica em `http://<servidor>:8010`.
 - `SOSIA_MOCK=1` no `.env`: respostas fixas, sem LLM e sem banco, para testar as telas. `SOSIA_MOCK=0`: motor real.
@@ -19,12 +23,18 @@ endpoint ficam em `contrato_api/`, com o `openapi.json`.
 ## 3. Endpoints
 | Método e rota | Corpo | Resposta |
 |---|---|---|
-| `GET /saude` | — | `{ok, versao, versao_contrato, mock, llm, banco, embeddings, modo_pii}` |
+| `GET /saude` | — | `{ok, versao, versao_contrato, mock, llm, banco, banco_app, embeddings, modo_pii}` |
 | `POST /entrevistas` | `{cd_sistema, sigla, intencao, relato, imagens[]}` | `EstadoEntrevista` |
 | `GET /entrevistas/{id}` | — | `EstadoEntrevista` (retomar) |
 | `POST /entrevistas/{id}/respostas` | `{respostas:[{id, texto}]}` | `EstadoEntrevista` |
-| `POST /entrevistas/{id}/regra` **(novo, 1.1.0)** | `{aceita: bool, comentario?: string}` | `EstadoEntrevista` |
+| `POST /entrevistas/{id}/regra` (1.1.0) | `{aceita: bool, comentario?: string}` | `EstadoEntrevista` |
 | `POST /entrevistas/{id}/contrato` | — | `Contrato` |
+| `POST /entrevistas/{id}/confirmacao` **(novo, 1.2.0)** | `EscopoEditado` | `EscopoConfirmado` |
+| `POST /entrevistas/{id}/confirmacao/chamados` **(novo, 1.2.0)** | `VinculoChamados` | `Confirmacao` |
+| `GET /solicitacoes/{cd}/escopo` **(novo, 1.2.0)** | — | `EscopoChamado` |
+| `GET /confirmacoes/pendentes?horas=1` **(novo, 1.2.0)** | — | `EntrevistaPendente[]` |
+
+`/saude`: `ok` agora exige também `banco_app=true` (banco da aplicação no ar).
 
 Detalhes dos campos:
 - `intencao`: `PAROU_DE_FUNCIONAR` | `MUDAR_EXISTENTE` | `ALGO_NOVO`.
@@ -35,9 +45,9 @@ Erros, sempre no formato `{erro, detalhe}`:
 | Código | Quando |
 |---|---|
 | 401 | token errado |
-| 404 | entrevista não existe |
-| 409 | `/regra` sem regra documentada, ou já decidida |
-| 422 | corpo inválido |
+| 404 | entrevista não existe; em `/solicitacoes/{cd}/escopo`, chamado que não veio do fluxo novo |
+| 409 | `/regra` sem regra documentada, ou já decidida; `/respostas` ou `/regra` numa entrevista CONFIRMADA; as regras da confirmação (4.5) |
+| 422 | corpo inválido; requisito com segmento inexistente; tipo de chamado repetido; 2 chamados sem `cd_pacote` |
 | 500 | erro interno |
 | 503 | sem token, ou motor real indisponível |
 
@@ -69,10 +79,74 @@ Erros, sempre no formato `{erro, detalhe}`:
 - `analise_ia=false` significa que a resposta veio do roteiro fixo, sem IA, porque o LLM falhou ou está fora. O fluxo continua igual, e o chamado pode ser marcado como "sem análise de IA".
 - Para decidir entre o fluxo com IA e o formulário antigo: `/saude` com `ok=true` e `llm=true` → IA.
 
+### 4.5 Confirmação do Escopo do Pedido (novo na 1.2.0) — `confirmarAbertura.asp`
+**Um chamado por tipo, no máximo 2:** `CORRETIVO` e `EVOLUTIVO`. Evolutivo de algo existente e evolutivo novo vão no **mesmo**
+chamado, em seções separadas. O vínculo entre os 2 chamados fica no Oracle (`SOS.TS_PACOTE` / `TS_SOLICITACAO_PACOTE`), gravado
+pelo SOS. Na API o objeto continua se chamando `Contrato`; "Escopo do Pedido" é só o nome na tela.
+
+Fluxo:
+```
+1. POST /entrevistas/{id}/confirmacao          {escopo editado}         → grupos + texto de cada chamado; situacao PENDENTE
+2. Oracle: 1–2 chamados (+ TS_PACOTE se 2), numa transação; grave o id da entrevista no DS_INFO_ADICIONAL
+3. POST /entrevistas/{id}/confirmacao/chamados {chamados[], cd_pacote}  → situacao CONFIRMADA (idempotente)
+Falha entre 2 e 3: o chamado existe, a entrevista fica PENDENTE e aparece em GET /confirmacoes/pendentes. Repita o passo 3.
+```
+
+**Passo 1 — `POST /entrevistas/{id}/confirmacao`.** Entrada (`EscopoEditado`):
+```json
+{ "titulo": "...", "objetivo": "...",
+  "requisitos": [{"segmento": 1, "descricao": "...", "criterio_aceite": "..."}],
+  "fora_escopo": ["..."], "duvidas": ["..."],
+  "integracoes": [{"sistema": "Benner", "sentido": "BUSCA", "descricao": "..."}],
+  "cd_usuario": 123 }
+```
+- Mande só `segmento`, `descricao` e `criterio_aceite` de cada requisito. **O tipo vem do segmento de origem**, nunca da tela:
+  `CORRETIVO` → chamado corretivo; `EVOLUTIVO_*` → chamado evolutivo.
+- `cd_usuario`: o `session("CD_USUARIO")`, só para auditoria. Nunca mande o nome.
+- **Quem valida é o serviço:** 409 enquanto `faltando` não estiver vazio (o `detalhe` lista o que falta). O SOS **não precisa
+  replicar** `TRIVIAIS`/`conteudo` em VBScript (isso substitui o item 4.3 para a confirmação).
+- Outros 409: entrevista já CONFIRMADA; `POST /contrato` ainda não chamado. 422: requisito apontando para segmento inexistente.
+- Pode ser chamado de novo enquanto PENDENTE (o usuário voltou e editou): a versão do usuário é substituída.
+
+Saída (`EscopoConfirmado`):
+```json
+{ "id": "...", "versao_contrato": "1.2.0", "situacao": "PENDENTE",
+  "grupos": [{ "tipo": "CORRETIVO", "titulo": "... (correção)", "texto": "OBJETIVO\n...",
+               "requisitos": [{"n": 1, "tipo": "CORRETIVO", "natureza": "CORRECAO", "segmento": 1,
+                               "descricao": "...", "criterio_aceite": "..."}] }],
+  "analise_ia": true, "nota": 80, "regra_documentada": null }
+```
+- Um item em `grupos` = um chamado a gravar. Ordem fixa: `CORRETIVO` antes de `EVOLUTIVO`.
+- `titulo` → `DS_RESUMO` (até 200). Com 2 grupos ganha o sufixo " (correção)" / " (evolução)".
+- `texto` → `DS_SOLICITACAO`. Já vem com o mais importante primeiro (objetivo, requisitos com critério de aceite, referência ao
+  outro chamado, fora de escopo, integrações, dúvidas, regra documentada), então pode cortar no limite de bytes (~3900).
+- `n` é a numeração do pedido inteiro, igual nos dois chamados. `natureza`: `CORRECAO` | `ALTERACAO` | `NOVO`.
+- `regra_documentada` só vem quando o usuário aceitou mudar a regra: é o trecho a anexar.
+
+**Passo 3 — `POST /entrevistas/{id}/confirmacao/chamados`.** Entrada (`VinculoChamados`):
+```json
+{ "chamados": [{"tipo": "CORRETIVO", "cd_solicitacao": 50123}, {"tipo": "EVOLUTIVO", "cd_solicitacao": 50124}], "cd_pacote": 7 }
+```
+- Os tipos têm de ser exatamente os dos grupos do passo 1 (409). Tipo repetido ou 2 chamados sem `cd_pacote` → 422.
+- **Idempotente:** repetir com os mesmos números devolve 200 com o mesmo corpo. Outros números numa entrevista já confirmada → 409.
+  Um `cd_solicitacao` já vinculado a outra entrevista → 409.
+- Sem o passo 1 antes → 409. Saída (`Confirmacao`): `{id, versao_contrato, situacao: "CONFIRMADA", chamados[], cd_pacote}`.
+
+**Depois de CONFIRMADA:** `/respostas`, `/regra` e `/confirmacao` dão 409. `/contrato` devolve o mesmo escopo, sem mudar nada.
+
+**Reconciliação — `GET /confirmacoes/pendentes?horas=1`** (`horas` de 0 a 720): entrevistas PENDENTE há mais de `horas`,
+`[{id, cd_sistema, sigla, atualizado_em, grupos: ["CORRETIVO", ...]}]`. Procure no Oracle o chamado com esse id no
+`DS_INFO_ADICIONAL`: se existir, chame o passo 3; se não, a abertura foi abandonada.
+
+**Fase 2 — `GET /solicitacoes/{cd}/escopo`:** `{cd_solicitacao, entrevista_id, tipo, cd_pacote, versoes: [{versao, origem,
+cd_usuario, criado_em, conteudo}]}`. Versão 0 = gerada pela IA, 1 = confirmada pelo usuário (2+ ficam para a Sustentação). 404 se
+o chamado não veio do fluxo novo.
+
 ## 5. Regras do fluxo (determinísticas, não dependem do LLM)
 - No máximo **2 rodadas** de perguntas e **5 perguntas** por rodada. `pronto=true` → chamar `/contrato`.
 - `rodada=3` significa entrevista encerrada.
-- Pedido misto vem com até 3 segmentos; cada segmento corresponde a um chamado.
+- Pedido misto vem com até 3 segmentos. **Os chamados não são por segmento, e sim por tipo** (no máximo 2: um corretivo e um
+  evolutivo; os segmentos evolutivos vão juntos no mesmo chamado). Quem agrupa é o `POST /confirmacao` (4.5).
 - `faltando` e `pode_confirmar` do contrato são calculados por regra fixa, por roteiro:
 
 | Roteiro | Slots obrigatórios |
@@ -89,10 +163,19 @@ O mock reage a palavras do relato:
 - Benner, SEI, banco, Receita, arquivo, planilha ou e-mail → pergunta de gatilho;
 - "não permite", "não deixa" ou "bloque…" num `PAROU_DE_FUNCIONAR` → regra documentada de exemplo, e o `/regra` funciona como no real;
 - `MUDAR_EXISTENTE` → 2 candidatos de exemplo.
+- A confirmação (4.5) segue as mesmas regras do motor real, em memória: um relato misto ("… e também …") gera 2 grupos.
 
-No mock, `analise_ia` é sempre `false`.
+No mock, `analise_ia` é sempre `false`. O estado do mock some quando o container reinicia.
 
 ## 7. LGPD
 - `modo_pii=local`, o padrão nos testes com a chave pessoal: o texto é anonimizado no sos-ia antes do LLM e as imagens não são enviadas.
 - O SOS **não deve enviar o nome do solicitante** no relato.
 - O modo `contrato` (Azure) depende de aprovação da Segurança.
+- O modo `teste` (só testes controlados) anonimiza o texto mas envia as imagens originais ao LLM: use apenas imagens sem dado pessoal.
+
+## 8. Banco da aplicação (novo na 1.2.0)
+- As entrevistas, as versões do Escopo do Pedido e o vínculo com os chamados ficam no container `sosia_app_db` (database
+  `sosia_app`, porta 5435 só em 127.0.0.1), separado do banco do RAG (`sosia_db`, restaurável do dump).
+- O volume `sosia_app_pgdata` é **externo**: `docker compose down -v` não o apaga. É dado de produção; faça backup:
+  `docker exec sosia_app_db pg_dump -U sosia_app -Fc sosia_app > backup\sosia_app_AAAAMMDD.dump`.
+- Uma entrevista CONFIRMADA não expira (`expira_em` nulo): o Escopo do Pedido de um chamado aberto fica guardado.

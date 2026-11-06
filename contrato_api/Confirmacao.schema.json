@@ -1,0 +1,80 @@
+{
+  "$defs": {
+    "ChamadoGerado": {
+      "additionalProperties": false,
+      "properties": {
+        "tipo": {
+          "$ref": "#/$defs/TipoRequisito"
+        },
+        "cd_solicitacao": {
+          "description": "TS_SOLICITACAO.CD_SOLICITACAO",
+          "exclusiveMinimum": 0,
+          "title": "Cd Solicitacao",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tipo",
+        "cd_solicitacao"
+      ],
+      "title": "ChamadoGerado",
+      "type": "object"
+    },
+    "TipoRequisito": {
+      "description": "Define o desmembramento: um chamado por tipo ao confirmar.",
+      "enum": [
+        "CORRETIVO",
+        "EVOLUTIVO"
+      ],
+      "title": "TipoRequisito",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Saída de POST /entrevistas/{id}/confirmacao/chamados (idempotente).",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "versao_contrato": {
+      "default": "1.2.0",
+      "title": "Versao Contrato",
+      "type": "string"
+    },
+    "situacao": {
+      "description": "CONFIRMADA",
+      "title": "Situacao",
+      "type": "string"
+    },
+    "chamados": {
+      "items": {
+        "$ref": "#/$defs/ChamadoGerado"
+      },
+      "title": "Chamados",
+      "type": "array"
+    },
+    "cd_pacote": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cd Pacote"
+    }
+  },
+  "required": [
+    "id",
+    "situacao",
+    "chamados"
+  ],
+  "title": "Confirmacao",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/Confirmacao.schema.json",
+  "x-versao-contrato": "1.2.0"
+}

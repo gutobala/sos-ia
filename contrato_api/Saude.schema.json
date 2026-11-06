@@ -10,7 +10,7 @@
       "type": "string"
     },
     "versao_contrato": {
-      "default": "1.1.0",
+      "default": "1.2.0",
       "title": "Versao Contrato",
       "type": "string"
     },
@@ -24,6 +24,11 @@
     },
     "banco": {
       "title": "Banco",
+      "type": "boolean"
+    },
+    "banco_app": {
+      "description": "banco da aplicação (entrevistas e Escopo do Pedido confirmado)",
+      "title": "Banco App",
       "type": "boolean"
     },
     "embeddings": {
@@ -41,6 +46,7 @@
     "mock",
     "llm",
     "banco",
+    "banco_app",
     "embeddings",
     "modo_pii"
   ],
@@ -48,5 +54,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/Saude.schema.json",
-  "x-versao-contrato": "1.1.0"
+  "x-versao-contrato": "1.2.0"
 }

@@ -10,11 +10,18 @@ no passo 5; até lá, `SOSIA_MOCK=1`.
 ## Subir tudo (Docker)
 ```
 copy .env.example .env             (ajuste SOSIA_TOKEN, chaves etc.)
-docker compose up -d --build       (banco pgvector + API; na 1ª vez restaura dados\sosia.dump, ~2 min)
-docker compose ps                  (sosia_db healthy, sosia_api em http://127.0.0.1:8010)
-docker compose down                (para; "down -v" apaga o volume e força nova restauração)
+docker volume create sosia_app_pgdata   (uma vez só: volume externo do banco da aplicação)
+docker compose up -d --build       (banco do núcleo + banco da aplicação + API; na 1ª vez restaura dados\sosia.dump, ~2 min)
+docker compose ps                  (sosia_db e sosia_app_db healthy, sosia_api em http://127.0.0.1:8010)
+docker compose down                (para; "down -v" apaga o volume do núcleo e força nova restauração; o da aplicação fica)
 ```
 - `sosia_db`: pgvector/pg16, porta 5434 só em 127.0.0.1, volume `sos-ia_sosia_pgdata`, `shm_size: 1gb` (índices HNSW).
+  Banco do RAG: restaurável do dump e descartável.
+- `sosia_app_db` (1.2.0): banco da **aplicação** (database `sosia_app`, schema `app`), porta 5435 só em 127.0.0.1, volume
+  **externo** `sosia_app_pgdata` (o compose nunca remove volume externo). Guarda entrevistas, versões do Escopo do Pedido e o vínculo
+  com os chamados do SOS: é dado de produção. Backup:
+  `docker exec sosia_app_db pg_dump -U sosia_app -Fc sosia_app > backup\sosia_app_AAAAMMDD.dump`.
+  As entrevistas de teste antigas em `apf.entrevista` do `sosia` não foram migradas.
 - `sosia_api`: imagem python:3.13-slim, sem modelos locais; `/saude` informa `banco: true` quando o núcleo está carregado.
 - `dados\sosia.dump` não vai para o git: é gerado por `migracao\exporta_nucleo.py`.
 
@@ -35,7 +42,7 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
 - Cabeçalho obrigatório (menos em `/saude`): `X-SOSIA-Token: mock` (em produção: valor de `SOSIA_TOKEN`).
 - Respostas sempre `application/json; charset=utf-8`; erros sempre no formato `Erro` `{erro, detalhe}`.
 
-## Contrato da API (versão 1.1.0) — `contrato_api/`
+## Contrato da API (versão 1.2.0) — `contrato_api/`
 | Rota | Entrada | Saída |
 |---|---|---|
 | `GET /saude` | — | `Saude` (o SOS decide IA × roteiro fixo por `ok`) |
@@ -44,6 +51,10 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
 | `GET /entrevistas/{id}` | — | `EstadoEntrevista` (retomar) |
 | `POST /entrevistas/{id}/regra` (1.1.0) | `DecisaoRegraDocumentada` `{aceita, comentario?}` | `EstadoEntrevista` (409 sem regra ou já decidida) |
 | `POST /entrevistas/{id}/contrato` | — | `Contrato` (`pode_confirmar=false` enquanto houver `faltando`) |
+| `POST /entrevistas/{id}/confirmacao` (1.2.0) | `EscopoEditado` | `EscopoConfirmado`: grupos (um chamado por tipo) → PENDENTE |
+| `POST /entrevistas/{id}/confirmacao/chamados` (1.2.0) | `VinculoChamados` `{chamados[{tipo, cd_solicitacao}], cd_pacote}` | `Confirmacao` → CONFIRMADA (idempotente) |
+| `GET /solicitacoes/{cd}/escopo` (1.2.0) | — | `EscopoChamado` (versões 0 = IA, 1 = usuário) |
+| `GET /confirmacoes/pendentes?horas=1` (1.2.0) | — | `EntrevistaPendente[]` (para reconciliar com o Oracle) |
 
 - `intencao`: `PAROU_DE_FUNCIONAR` · `MUDAR_EXISTENTE` · `ALGO_NOVO` (garantia não passa pela IA).
 - `segmentos[].tipo`: `CORRETIVO` · `EVOLUTIVO_EXISTENTE` · `EVOLUTIVO_NOVO`; `requisitos[].tipo`: `CORRETIVO` · `EVOLUTIVO`
@@ -61,6 +72,13 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
 - Resposta sem conteúdo não preenche slot: "ok", "sim", "não sei" e parecidas são ignoradas antes de medir o tamanho mínimo
   (`roteiros.conteudo`/`TRIVIAIS`). "não" e "nada" valem. O `confirmarAbertura.asp` deve repetir a mesma regra.
 - Imagens: `{nome, mime image/*, base64}`, até 5.
+- **Confirmação (1.2.0; regras em `nucleo/entrevista/confirmacao.py`):** **um chamado por tipo, no máximo 2** (`CORRETIVO`,
+  `EVOLUTIVO`; evolutivo de algo existente e novo vão no mesmo chamado, em seções separadas). O tipo de cada requisito vem do
+  segmento de origem, nunca da tela. O serviço recusa (409) enquanto `faltando` não estiver vazio, então o SOS não precisa
+  repetir `TRIVIAIS`/`conteudo`. Grava a versão 0 (contrato gerado) e a 1 (escopo editado + grupos). Situações:
+  `EM_ANDAMENTO` → `PRONTA` → `CONTRATO_GERADO` → `PENDENTE` (escopo enviado, SOS gravando no Oracle) → `CONFIRMADA` (sem
+  expiração; `/respostas`, `/regra` e `/confirmacao` dão 409). Fluxo e regras completas em `PASSAGEM_SOS.md` (4.5) e no plano
+  `docs\sosia-1.2.0-confirmacao.md`.
 - Os arquivos `*.schema.json` e `openapi.json` são gerados de `nucleo/entrevista/modelos.py`:
   `.venv\Scripts\python contrato_api\gera_schemas.py` (o teste falha se ficarem desatualizados).
 
@@ -74,7 +92,7 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
 - `analise_ia=false` no mock (o chamado seria marcado "sem análise de IA").
 
 ## Núcleo portado (passo 4, 05/11/2026)
-`nucleo/`: `llm` (OpenAI/Azure, modelo por papel, imagens só no modo contrato), `pii` (anonimização local; nomes em
+`nucleo/`: `llm` (OpenAI/Azure, modelo por papel, imagens só nos modos contrato e teste), `pii` (anonimização local; nomes em
 `dados\nomes_anonimizacao.txt`, gerado por `migracao\exporta_nomes.py`, fora do git), `embeddings` (e5 local ou
 text-embedding-3-large), `rag/busca` e `rag/catalogo` (RAG da wiki e catálogo de funções), `estimador/` (regras, histórico,
 universo, prévia, campos). Paridade com a pesquisa (`migracao\confere_paridade.py`): histórico dos 83 chamados MAE 19,87 e
@@ -109,8 +127,9 @@ só no histórico de complexidade da Fase 3. Depois de recriar o `sosia` com `ex
   - no máximo 2 rodadas;
   - a regra documentada só aparece se o trecho veio do RAG e for regra, mensagem ou caso de uso;
   - `faltando` e `pode_confirmar`.
-- **Estado no banco** (`apf.entrevista`, `apf.entrevista_evento`, criados sozinhos): eventos guardam modelo, tokens, custo e a
-  resposta do LLM, nunca o prompt.
+- **Estado no banco da aplicação** (desde a 1.2.0, `sosia_app`: `app.entrevista`, `app.entrevista_evento`,
+  `app.entrevista_escopo`, `app.entrevista_chamado`, criados sozinhos): eventos guardam modelo, tokens, custo e a resposta do
+  LLM, nunca o prompt. O banco do núcleo (`sosia`) só é lido (RAG, anonimização).
 - **Sem LLM** (sem chave, erro ou recusa): roteiro fixo com `analise_ia=false`. **Sem RAG** (banco sem os vetores ou API sem
   chave de embedding): a entrevista segue sem candidatos e sem documentação.
 - **Ponta a ponta:** `migracao\testa_entrevista.py` roda os 6 cenários do plano do SOS pela API, com o LLM de verdade.
@@ -119,10 +138,19 @@ só no histórico de complexidade da Fase 3. Depois de recriar o `sosia` com `ex
 ## Variáveis de ambiente (`.env` opcional na raiz, nunca versionado)
 Comentário no `.env` vai **na linha de cima**, nunca no fim da linha: o docker compose entrega `VAR= # comentário` ao container
 como o valor "# comentário" (o núcleo limpa isso desde 05/11/2026, mas outros programas não).
-`SOSIA_MOCK` · `SOSIA_TOKEN` · `SOSIA_DSN` (database `sosia`) · `SOSIA_LLM=openai|azure` · `SOSIA_EMB=e5|azure` ·
-`SOSIA_PII_MODO=local|contrato` (contrato só com Azure) · `OPENAI_API_KEY` · `AZURE_OPENAI_*`.
+`SOSIA_MOCK` · `SOSIA_TOKEN` · `SOSIA_DSN` (database `sosia`) · `SOSIA_APP_DSN` (database `sosia_app`) ·
+`SOSIA_APP_DB_PORTA` · `SOSIA_APP_DB_SENHA` · `SOSIA_LLM=openai|azure` · `SOSIA_EMB=e5|azure` ·
+`SOSIA_PII_MODO=local|contrato|teste` (contrato só com Azure; teste envia imagens originais, só com imagens sem dado pessoal) ·
+`SOSIA_IMAGEM_DETALHE=high|low|auto` · `OPENAI_API_KEY` · `AZURE_OPENAI_*`.
 
 ## Testes
+Sem `.venv` nesta máquina: container descartável, com um `.env` vazio por cima para não pegar o token real
+(`<arquivo vazio>` = qualquer arquivo vazio no disco).
 ```
-.venv\Scripts\python -m pytest
+docker run --rm -v "D:/Projetos/sos-ia:/app" -v "<arquivo vazio>:/app/.env:ro" -w /app --network sos-ia_default ^
+  -e SOSIA_DSN="host=db port=5432 dbname=sosia user=sosia password=sosia_local" ^
+  -e SOSIA_APP_DSN="host=app_db port=5432 dbname=sosia_app user=sosia_app password=sosia_app_local" ^
+  sos-ia-api python -m pytest -q -p no:cacheprovider
 ```
+`test_rag_real_traz_documentacao_e_candidatos` e `test_candidatos_fusao_real_e_reordenacao` precisam da chave de embeddings
+(só no container `sosia_api`); fora dele falham com `LLMIndisponivel`.

@@ -20,6 +20,12 @@ MODELOS = {
     "DecisaoRegraDocumentada": m.DecisaoRegraDocumentada,   # entrada de POST /entrevistas/{id}/regra (1.1.0)
     "EstadoEntrevista": m.EstadoEntrevista,   # saída de POST /entrevistas, /respostas e GET /entrevistas/{id}
     "Contrato": m.Contrato,                   # saída de POST /entrevistas/{id}/contrato
+    "EscopoEditado": m.EscopoEditado,         # entrada de POST /entrevistas/{id}/confirmacao (1.2.0)
+    "EscopoConfirmado": m.EscopoConfirmado,   # saída de POST /entrevistas/{id}/confirmacao (1.2.0)
+    "VinculoChamados": m.VinculoChamados,     # entrada de POST /entrevistas/{id}/confirmacao/chamados (1.2.0)
+    "Confirmacao": m.Confirmacao,             # saída de POST /entrevistas/{id}/confirmacao/chamados (1.2.0)
+    "EscopoChamado": m.EscopoChamado,         # saída de GET /solicitacoes/{cd}/escopo (1.2.0)
+    "EntrevistaPendente": m.EntrevistaPendente,   # item de GET /confirmacoes/pendentes (1.2.0)
     "Saude": m.Saude,                         # saída de GET /saude
     "Erro": m.Erro,                           # corpo de qualquer erro (401, 404, 409, 422, 503)
 }

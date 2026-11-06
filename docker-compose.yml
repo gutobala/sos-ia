@@ -28,14 +28,37 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # Banco da APLICAÇÃO (entrevistas, Escopo do Pedido confirmado, vínculo com os chamados): dado de produção, com backup.
+  # Instância e volume próprios: o volume é externo, então "docker compose down -v" não o apaga.
+  app_db:
+    image: pgvector/pgvector:pg16          # a mesma imagem do db (já baixada); não usa vetores
+    container_name: sosia_app_db
+    environment:
+      POSTGRES_DB: sosia_app
+      POSTGRES_USER: sosia_app
+      POSTGRES_PASSWORD: ${SOSIA_APP_DB_SENHA:-sosia_app_local}
+    ports:
+      - "127.0.0.1:${SOSIA_APP_DB_PORTA:-5435}:5432"
+    volumes:
+      - sosia_app_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sosia_app -d sosia_app"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
   api:
     build: .
     container_name: sosia_api
     depends_on:
       db:
         condition: service_healthy
+      app_db:
+        condition: service_healthy
     environment:
       SOSIA_DSN: "host=db port=5432 dbname=sosia user=sosia password=${SOSIA_DB_SENHA:-sosia_local}"
+      SOSIA_APP_DSN: "host=app_db port=5432 dbname=sosia_app user=sosia_app password=${SOSIA_APP_DB_SENHA:-sosia_app_local}"
       SOSIA_MOCK: ${SOSIA_MOCK:-1}
       SOSIA_TOKEN: ${SOSIA_TOKEN:-}
       SOSIA_LLM: ${SOSIA_LLM:-openai}
@@ -67,3 +90,5 @@ services:
 
 volumes:
   sosia_pgdata:
+  sosia_app_pgdata:
+    external: true      # criado uma vez: docker volume create sosia_app_pgdata. "down -v" não o apaga.

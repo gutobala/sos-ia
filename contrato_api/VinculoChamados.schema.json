@@ -1,0 +1,69 @@
+{
+  "$defs": {
+    "ChamadoGerado": {
+      "additionalProperties": false,
+      "properties": {
+        "tipo": {
+          "$ref": "#/$defs/TipoRequisito"
+        },
+        "cd_solicitacao": {
+          "description": "TS_SOLICITACAO.CD_SOLICITACAO",
+          "exclusiveMinimum": 0,
+          "title": "Cd Solicitacao",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tipo",
+        "cd_solicitacao"
+      ],
+      "title": "ChamadoGerado",
+      "type": "object"
+    },
+    "TipoRequisito": {
+      "description": "Define o desmembramento: um chamado por tipo ao confirmar.",
+      "enum": [
+        "CORRETIVO",
+        "EVOLUTIVO"
+      ],
+      "title": "TipoRequisito",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Entrada de POST /entrevistas/{id}/confirmacao/chamados: o que o SOS gravou no Oracle.",
+  "properties": {
+    "chamados": {
+      "description": "um por grupo da confirmação",
+      "items": {
+        "$ref": "#/$defs/ChamadoGerado"
+      },
+      "maxItems": 2,
+      "minItems": 1,
+      "title": "Chamados",
+      "type": "array"
+    },
+    "cd_pacote": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "TS_PACOTE.CD_PACOTE; obrigatório com 2 chamados",
+      "title": "Cd Pacote"
+    }
+  },
+  "required": [
+    "chamados"
+  ],
+  "title": "VinculoChamados",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/VinculoChamados.schema.json",
+  "x-versao-contrato": "1.2.0"
+}

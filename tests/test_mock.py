@@ -10,9 +10,10 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from contrato_api import gera_schemas  # noqa: E402
+from nucleo import config  # noqa: E402
 from servico.app import app  # noqa: E402
 
-H = {"X-SOSIA-Token": "mock"}
+H = {"X-SOSIA-Token": config.TOKEN}      # "mock" sem .env; o SOSIA_TOKEN do .env quando ele existe
 c = TestClient(app)
 SCHEMAS = {n: cls.model_json_schema() for n, cls in gera_schemas.MODELOS.items()}
 
@@ -122,6 +123,110 @@ def test_entrevista_inexistente():
     r = c.post("/entrevistas/nao-existe/contrato", headers=H)
     assert r.status_code == 404
     valida("Erro", r.json())
+
+
+# ---------------------------------------------------------------- confirmação (1.2.0)
+def pronta(relato, intencao="PAROU_DE_FUNCIONAR"):
+    """Entrevista respondida até o fim e com o contrato gerado e confirmável."""
+    e = nova(relato, intencao)
+    for _ in range(2):
+        if e["pronto"]:
+            break
+        e = responde_tudo(e)
+    k = valida("Contrato", c.post(f"/entrevistas/{e['id']}/contrato", headers=H).json())
+    assert k["pode_confirmar"], k["faltando"]
+    return k
+
+
+def escopo_de(k, **kw):
+    corpo = dict(titulo=k["titulo"], objetivo=k["objetivo"], fora_escopo=["Relatórios"], duvidas=[],
+                 integracoes=[dict(sistema="Benner", sentido="BUSCA", descricao="consulta o pagamento")], cd_usuario=321,
+                 requisitos=[dict(segmento=r["segmento"], descricao=r["descricao"], criterio_aceite=r["criterio_aceite"])
+                             for r in k["requisitos"]])
+    corpo.update(kw)
+    return valida("EscopoEditado", corpo)
+
+
+def confirma(eid, escopo):
+    return c.post(f"/entrevistas/{eid}/confirmacao", headers=H, json=escopo)
+
+
+def vincula(eid, chamados, cd_pacote=None):
+    return c.post(f"/entrevistas/{eid}/confirmacao/chamados", headers=H,
+                  json=dict(chamados=[dict(tipo=t, cd_solicitacao=cd) for t, cd in chamados], cd_pacote=cd_pacote))
+
+
+def test_confirmacao_misto_gera_dois_chamados_e_vinculo_com_pacote():
+    k = pronta("O relatório de pagamentos dá erro ao gerar e também quero incluir a coluna de multa.")
+    r = confirma(k["id"], escopo_de(k))
+    assert r.status_code == 200, r.text
+    e = valida("EscopoConfirmado", r.json())
+    assert e["situacao"] == "PENDENTE" and [g["tipo"] for g in e["grupos"]] == ["CORRETIVO", "EVOLUTIVO"]
+    assert e["grupos"][0]["titulo"].endswith(" (correção)") and e["grupos"][1]["titulo"].endswith(" (evolução)")
+    assert e["grupos"][1]["requisitos"][0]["natureza"] == "ALTERACAO"
+    assert "chamado evolutivo vinculado" in e["grupos"][0]["texto"] and "INTEGRAÇÕES" in e["grupos"][0]["texto"]
+
+    assert vincula(k["id"], [("CORRETIVO", 91001), ("EVOLUTIVO", 91002)]).status_code == 422          # 2 chamados sem pacote
+    assert vincula(k["id"], [("CORRETIVO", 91001)], 7).status_code == 409                              # falta o grupo evolutivo
+    assert vincula(k["id"], [("CORRETIVO", 91001), ("CORRETIVO", 91002)], 7).status_code == 422        # tipo repetido
+    r1 = vincula(k["id"], [("EVOLUTIVO", 91002), ("CORRETIVO", 91001)], 7)
+    assert r1.status_code == 200, r1.text
+    conf = valida("Confirmacao", r1.json())
+    assert conf["situacao"] == "CONFIRMADA" and conf["cd_pacote"] == 7
+    r2 = vincula(k["id"], [("CORRETIVO", 91001), ("EVOLUTIVO", 91002)], 7)                            # repetição idêntica
+    assert r2.status_code == 200 and r2.json() == r1.json()
+    assert vincula(k["id"], [("CORRETIVO", 91003), ("EVOLUTIVO", 91002)], 7).status_code == 409        # outros números
+
+    # depois de confirmada: nada muda a entrevista
+    assert confirma(k["id"], escopo_de(k)).status_code == 409
+    assert c.post(f"/entrevistas/{k['id']}/respostas", headers=H, json={"respostas": [{"id": "x", "texto": "y"}]}).status_code == 409
+    k2 = c.post(f"/entrevistas/{k['id']}/contrato", headers=H)
+    assert k2.status_code == 200 and k2.json()["titulo"] == k["titulo"]
+
+    s = c.get("/solicitacoes/91002/escopo", headers=H)
+    assert s.status_code == 200, s.text
+    s = valida("EscopoChamado", s.json())
+    assert s["tipo"] == "EVOLUTIVO" and s["cd_pacote"] == 7 and [v["versao"] for v in s["versoes"]] == [0, 1]
+    assert s["versoes"][1]["origem"] == 1 and s["versoes"][1]["cd_usuario"] == 321
+    assert c.get("/solicitacoes/123456789/escopo", headers=H).status_code == 404
+
+    # chamado já vinculado a outra entrevista
+    k3 = pronta("Ao salvar a alienação aparece HTTP 500 e nada é gravado.")
+    assert confirma(k3["id"], escopo_de(k3)).status_code == 200
+    assert vincula(k3["id"], [("CORRETIVO", 91001)]).status_code == 409
+
+
+def test_confirmacao_um_grupo_sem_sufixo_e_validacoes():
+    e = nova("Ao gerar a guia aparece HTTP 500 e nada é gravado.")
+    assert confirma(e["id"], dict(titulo="t", objetivo="o", requisitos=[dict(segmento=1, descricao="d")])).status_code == 409  # sem contrato
+    assert vincula(e["id"], [("CORRETIVO", 92001)]).status_code == 409                            # sem confirmação
+    k = pronta("Ao emitir o boleto aparece HTTP 500 e nada é gravado.")
+    assert confirma(k["id"], escopo_de(k, requisitos=[dict(segmento=9, descricao="x")])).status_code == 422
+    e = valida("EscopoConfirmado", confirma(k["id"], escopo_de(k)).json())
+    assert len(e["grupos"]) == 1 and e["grupos"][0]["titulo"] == k["titulo"]
+    assert "vinculado" not in e["grupos"][0]["texto"]
+    assert confirma(k["id"], escopo_de(k, titulo="Novo título")).json()["grupos"][0]["titulo"] == "Novo título"   # repetível em PENDENTE
+    assert vincula(k["id"], [("CORRETIVO", 92002)]).status_code == 200
+
+
+def test_confirmacao_bloqueada_com_faltando():
+    e = nova("Quero mudar o cálculo do desconto da venda direta.", intencao="MUDAR_EXISTENTE")
+    e = responde_tudo(e, texto="ok")
+    k = valida("Contrato", c.post(f"/entrevistas/{e['id']}/contrato", headers=H).json())
+    assert k["faltando"]
+    r = confirma(k["id"], escopo_de(k))
+    assert r.status_code == 409 and "Falta" in valida("Erro", r.json())["detalhe"]
+
+
+def test_confirmacoes_pendentes():
+    k = pronta("Ao imprimir o termo aparece HTTP 500 e nada é gravado.")
+    confirma(k["id"], escopo_de(k))
+    r = c.get("/confirmacoes/pendentes?horas=0", headers=H)
+    assert r.status_code == 200
+    itens = [valida("EntrevistaPendente", x) for x in r.json()]
+    assert any(x["id"] == k["id"] and x["grupos"] == ["CORRETIVO"] for x in itens)
+    assert all(x["id"] != k["id"] for x in c.get("/confirmacoes/pendentes?horas=1", headers=H).json())
+    assert c.get("/confirmacoes/pendentes?horas=721", headers=H).status_code == 422
 
 
 def test_schemas_gerados_atualizados():

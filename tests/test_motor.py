@@ -14,7 +14,7 @@ from nucleo import db, llm  # noqa: E402
 from nucleo.entrevista import motor as M  # noqa: E402
 from nucleo.entrevista.modelos import Intencao, NovaEntrevista, Resposta, Respostas  # noqa: E402
 
-pytestmark = pytest.mark.skipif(not db.ping(), reason="banco sosia indisponível")
+pytestmark = pytest.mark.skipif(not (db.ping() and db.ping_app()), reason="banco sosia ou sosia_app indisponível")
 
 DOCS = [dict(pagina="sistemas:gai:uc010", titulo="UC010 Manter contrato", secao="Fluxo principal", tipo="caso_de_uso",
              texto="O usuário informa o contrato e salva.", cos=0.84),
@@ -61,8 +61,8 @@ def ambiente(monkeypatch):
         monkeypatch.setattr(llm, "json_estruturado", f)
         return f
     yield mot, usa
-    with db.db() as c:
-        c.execute("DELETE FROM apf.entrevista WHERE id = ANY(%s::uuid[])", (criados,))
+    with db.db_app() as c:
+        c.execute("DELETE FROM app.entrevista WHERE id = ANY(%s::uuid[])", (criados,))
 
 
 def nova(intencao=Intencao.PAROU_DE_FUNCIONAR, relato="Ao salvar o contrato aparece erro 500 desde ontem."):
@@ -186,8 +186,8 @@ def test_fallback_sem_llm(ambiente, monkeypatch):
     e = mot.criar(nova(relato="O sistema dá erro ao enviar o arquivo de remessa para o Benner."))
     assert not e.analise_ia and e.perguntas
     assert e.perguntas[0].slot == "gatilho"                                        # gatilho detectado por regra, sem IA
-    with db.db() as c:
-        assert c.execute("SELECT count(*) n FROM apf.entrevista_evento WHERE entrevista_id = %s AND tipo = 'fallback'",
+    with db.db_app() as c:
+        assert c.execute("SELECT count(*) n FROM app.entrevista_evento WHERE entrevista_id = %s AND tipo = 'fallback'",
                          (e.id,)).fetchone()["n"] == 1
 
 
@@ -205,6 +205,64 @@ def test_contrato_faltando_deterministico_e_cache(ambiente):
     assert len(c1.requisitos) == 1 and c1.requisitos[0].n == 1 and c1.fora_escopo == ["Relatórios"]
     c2 = mot.contrato(e.id)                                                        # cache: não chama o LLM de novo
     assert c2.titulo == c1.titulo and len(f.prompts) == 2
+
+
+def test_confirmacao_ponta_a_ponta(ambiente):
+    """v0 (IA) e v1 (usuário) gravadas, PENDENTE → CONFIRMADA, expira_em nulo, vínculo idempotente e chamado único."""
+    from nucleo.entrevista import confirmacao as cf
+    from nucleo.entrevista.modelos import EscopoEditado, VinculoChamados
+    mot, usa = ambiente
+    cheio = {"onde_ocorre": "Tela de contratos, botão Salvar", "o_que_aconteceu": "Aparece a mensagem HTTP 500 e nada é gravado",
+             "como_reproduzir": "1) abrir o contrato 123; 2) clicar em Salvar", "desde_quando_quem": "Desde ontem, todos os usuários"}
+    contrato = dict(titulo="Erro ao salvar contrato", objetivo="Voltar a salvar contratos.",
+                    requisitos=[dict(segmento=1, tipo="CORRETIVO", descricao="Salvar o contrato sem erro 500.",
+                                     criterio_aceite="Salvar o contrato 123 sem erro.")],
+                    fora_escopo=[], duvidas=[], integracoes=[])
+    usa(resp_entrevista(slots=cheio), contrato)
+    e = mot.criar(nova())
+    assert e.pronto
+    with db.db_app() as c:
+        c.execute("UPDATE app.entrevista SET expira_em = now() + interval '30 days' WHERE id = %s", (e.id,))
+    esc = EscopoEditado(titulo="Erro ao salvar contrato", objetivo="Voltar a salvar contratos.", cd_usuario=55,
+                        requisitos=[dict(segmento=1, descricao="Salvar o contrato sem erro 500.", criterio_aceite="Salvar o 123.")])
+    with pytest.raises(cf.ConfirmacaoInvalida):                                    # contrato ainda não gerado
+        mot.confirmacao(e.id, esc)
+    k = mot.contrato(e.id)
+    assert k.pode_confirmar
+    conf = mot.confirmacao(e.id, esc)
+    assert conf.situacao == "PENDENTE" and [g.tipo.value for g in conf.grupos] == ["CORRETIVO"]
+    assert mot.contrato(e.id).titulo == k.titulo                                   # /contrato em PENDENTE não muda a situação
+    assert e.id in [p.id for p in mot.pendentes(0)]
+
+    cd = 990000001
+    with db.db_app() as c:
+        c.execute("DELETE FROM app.entrevista_chamado WHERE cd_solicitacao = %s", (cd,))
+    v = VinculoChamados(chamados=[dict(tipo="CORRETIVO", cd_solicitacao=cd)])
+    r1 = mot.vincular(e.id, v)
+    assert r1.situacao == "CONFIRMADA" and mot.vincular(e.id, v) == r1
+    with db.db_app() as c:
+        row = c.execute("SELECT situacao, expira_em FROM app.entrevista WHERE id = %s", (e.id,)).fetchone()
+        tipos = [r["tipo"] for r in c.execute("SELECT tipo FROM app.entrevista_evento WHERE entrevista_id = %s ORDER BY id", (e.id,))]
+    assert row["situacao"] == "CONFIRMADA" and row["expira_em"] is None
+    assert tipos.count("vinculo") == 1 and "confirmacao" in tipos
+
+    s = mot.escopo_do_chamado(cd)
+    assert [(x.versao, x.origem, x.cd_usuario) for x in s.versoes] == [(0, 0, None), (1, 1, 55)]
+    assert s.versoes[1].conteudo["grupos"][0]["tipo"] == "CORRETIVO"
+    with pytest.raises(cf.ConfirmacaoInvalida):
+        mot.responder(e.id, Respostas(respostas=[Resposta(id="x", texto="y")]))
+    with pytest.raises(cf.ConfirmacaoInvalida):
+        mot.confirmacao(e.id, esc)
+
+    # o mesmo chamado não pode ir para outra entrevista
+    usa(resp_entrevista(slots=cheio), contrato)
+    e2 = mot.criar(nova())
+    mot.contrato(e2.id)
+    mot.confirmacao(e2.id, esc)
+    with pytest.raises(cf.ConfirmacaoInvalida):
+        mot.vincular(e2.id, v)
+    with pytest.raises(KeyError):
+        mot.escopo_do_chamado(cd + 1)
 
 
 def test_id_inexistente(ambiente):
@@ -246,15 +304,16 @@ def test_motor_mostra_5_candidatos_e_falha_do_llm_mantem_fusao(monkeypatch):
     cands = [dict(id=i, nome=f"F{i}", tipo_ifpug="EE", modulo=None, similaridade=0.5, texto=f"EE f{i}") for i in range(12)]
     monkeypatch.setattr(llm, "disponivel", lambda: True)
     monkeypatch.setattr(llm, "json_estruturado", LLMFalso([RuntimeError("fora do ar")]))
-    with db.db() as c:
+    with db.db_app() as c:
         eid = "00000000-0000-0000-0000-0000000000aa"
-        c.execute("DELETE FROM apf.entrevista WHERE id = %s::uuid", (eid,))
         from nucleo.entrevista import armazem
+        armazem.garante(c)
+        c.execute("DELETE FROM app.entrevista WHERE id = %s::uuid", (eid,))
         armazem.criar(c, eid, nova(), None, "local", True, dict(x=1), 0, None)
         est = dict(candidatos=cands, texto="t", sigla="GAI", rodada=1)
         out = Motor._reordena_candidatos(c, eid, est)
-        ev = c.execute("SELECT tipo FROM apf.entrevista_evento WHERE entrevista_id = %s::uuid", (eid,)).fetchall()
-        c.execute("DELETE FROM apf.entrevista WHERE id = %s::uuid", (eid,))
+        ev = c.execute("SELECT tipo FROM app.entrevista_evento WHERE entrevista_id = %s::uuid", (eid,)).fetchall()
+        c.execute("DELETE FROM app.entrevista WHERE id = %s::uuid", (eid,))
         c.commit()
     assert [x["id"] for x in out] == [0, 1, 2, 3, 4] and all("texto" not in x for x in out)
     assert [e["tipo"] for e in ev] == ["fallback_candidatos"]

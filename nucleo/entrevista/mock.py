@@ -6,15 +6,22 @@ Serve para a sessão do SOS desenvolver novaAbertura.asp / entrevistaApi.asp ant
   - Benner / SEI / banco / Receita / arquivo no relato geram uma pergunta de gatilho (integração);
   - "não permite" / "não deixa" / "bloqueia" num corretivo devolvem uma regra documentada de exemplo; o segmento fica CORRETIVO
     até POST /regra (aceita → EVOLUTIVO_EXISTENTE com mais uma rodada de perguntas; recusa → segue corretivo);
-  - no máximo 2 rodadas; depois, pronto=true.
+  - no máximo 2 rodadas; depois, pronto=true;
+  - confirmação (1.2.0) com as mesmas regras do motor real (confirmacao.py), versões e vínculos em memória.
 """
+import datetime
 import re
 import uuid
 
-from . import roteiros
-from .modelos import (CandidatoFuncionalidade, Contrato, DecisaoRegra, DecisaoRegraDocumentada, EstadoEntrevista, Integracao,
-                      Intencao, NovaEntrevista, Pergunta, RegraDocumentada, RequisitoContrato, Respostas, Segmento, TipoRequisito,
-                      TipoSegmento)
+from . import confirmacao as cf, roteiros
+from .modelos import (CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra, DecisaoRegraDocumentada,
+                      EntrevistaPendente, EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista, Integracao, Intencao,
+                      NovaEntrevista, Pergunta, RegraDocumentada, RequisitoContrato, Respostas, Segmento, TipoRequisito, TipoSegmento,
+                      VersaoEscopo, VinculoChamados)
+
+
+def _agora():
+    return datetime.datetime.now(datetime.timezone.utc)
 
 MAX_RODADAS = 2
 MAX_PERGUNTAS = 5
@@ -45,6 +52,7 @@ class MotorMock:
 
     def __init__(self):
         self.estado = {}
+        self.por_chamado = {}          # cd_solicitacao -> entrevista (único, como no banco)
 
     # ---- interno
     def _segmentos_iniciais(self, req: NovaEntrevista):
@@ -107,10 +115,12 @@ class MotorMock:
     # ---- API
     def decidir_regra(self, eid, dec: DecisaoRegraDocumentada) -> EstadoEntrevista:
         st = self.estado[eid]
+        cf.verifica_aberta(st["situacao"])
         if not self._regra(st["req"]):
             raise ValueError("a entrevista não tem regra documentada")
         if st.get("decisao"):
             raise ValueError("a regra documentada já foi decidida")
+        st["contrato"], st["situacao"] = None, "EM_ANDAMENTO"
         if dec.aceita:
             st["decisao"] = DecisaoRegra.ACEITA
             st["segs"] = [roteiros.converte_para_evolutivo(s) if s.n == 1 else s for s in st["segs"]]
@@ -123,7 +133,8 @@ class MotorMock:
 
     def criar(self, req: NovaEntrevista) -> EstadoEntrevista:
         eid = str(uuid.uuid4())
-        self.estado[eid] = dict(req=req, rodada=1, segs=self._segmentos_iniciais(req), perguntas=[], gatilhos=[])
+        self.estado[eid] = dict(req=req, rodada=1, segs=self._segmentos_iniciais(req), perguntas=[], gatilhos=[], contrato=None,
+                                situacao="EM_ANDAMENTO", atualizado=_agora(), versoes={}, chamados=[], cd_pacote=None)
         return self._resposta(eid)
 
     def obter(self, eid) -> EstadoEntrevista:
@@ -135,6 +146,8 @@ class MotorMock:
 
     def responder(self, eid, resp: Respostas) -> EstadoEntrevista:
         st = self.estado[eid]
+        cf.verifica_aberta(st["situacao"])
+        st["contrato"], st["situacao"] = None, "EM_ANDAMENTO"
         por_id = {p.id: p for p in st["perguntas"]}
         for r in resp.respostas:
             p = por_id.get(r.id)
@@ -169,7 +182,59 @@ class MotorMock:
                 integ.append(Integracao(sistema="(a identificar)", sentido="AMBOS", descricao=v))
         regra = self._regra(req)
         falt = roteiros.faltando_com_regra(segs, regra is not None, st.get("decisao"))
-        return Contrato(id=eid, titulo=f"{req.sigla} - {req.relato.strip()[:80]}", objetivo=req.relato.strip()[:300],
-                        requisitos=reqs, fora_escopo=fora, duvidas=[f"Gatilho: {g}" for g in st["gatilhos"]], integracoes=integ,
-                        segmentos=segs, regra_documentada=regra, decisao_regra=st.get("decisao"), nota=self._nota(segs),
-                        faltando=falt, pode_confirmar=not falt, analise_ia=self.analise_ia)
+        k = Contrato(id=eid, titulo=f"{req.sigla} - {req.relato.strip()[:80]}", objetivo=req.relato.strip()[:300],
+                     requisitos=reqs, fora_escopo=fora, duvidas=[f"Gatilho: {g}" for g in st["gatilhos"]], integracoes=integ,
+                     segmentos=segs, regra_documentada=regra, decisao_regra=st.get("decisao"), nota=self._nota(segs),
+                     faltando=falt, pode_confirmar=not falt, analise_ia=self.analise_ia)
+        st["contrato"] = k
+        if st["situacao"] not in cf.SITUACOES_TRAVADAS:
+            st["situacao"] = "CONTRATO_GERADO"
+        return k
+
+    # ---- confirmação (1.2.0)
+    def confirmacao(self, eid, escopo: EscopoEditado) -> EscopoConfirmado:
+        st = self.estado[eid]
+        cf.verifica_aberta(st["situacao"])
+        k = st["contrato"]
+        if k is None:
+            raise cf.ConfirmacaoInvalida("o Escopo do Pedido ainda não foi gerado: chame POST /entrevistas/{id}/contrato antes")
+        cf.verifica_confirmavel(k)
+        grupos = cf.monta_grupos(k, escopo)
+        agora = _agora()
+        st["versoes"][0] = dict(origem=0, cd_usuario=None, criado_em=agora, conteudo=k.model_dump(mode="json"))
+        st["versoes"][1] = dict(origem=1, cd_usuario=escopo.cd_usuario, criado_em=agora,
+                                conteudo=dict(escopo=escopo.model_dump(mode="json"), grupos=[g.model_dump(mode="json") for g in grupos]))
+        st["situacao"], st["atualizado"] = "PENDENTE", agora
+        return EscopoConfirmado(id=eid, situacao="PENDENTE", grupos=grupos, analise_ia=k.analise_ia, nota=k.nota,
+                                regra_documentada=cf.regra_aceita(k))
+
+    def vincular(self, eid, vinculo: VinculoChamados) -> Confirmacao:
+        st = self.estado[eid]
+        if st["situacao"] not in cf.SITUACOES_TRAVADAS:
+            raise cf.ConfirmacaoInvalida("a entrevista não tem Escopo do Pedido confirmado: chame POST /entrevistas/{id}/confirmacao antes")
+        tipos = [g["tipo"] for g in st["versoes"][1]["conteudo"]["grupos"]]
+        existentes = [dict(tipo=t, cd_solicitacao=cd, cd_pacote=st["cd_pacote"]) for t, cd in st["chamados"]]
+        if not cf.valida_vinculo(tipos, vinculo, existentes):
+            if any(self.por_chamado.get(c.cd_solicitacao, eid) != eid for c in vinculo.chamados):
+                raise cf.ConfirmacaoInvalida("um dos chamados informados já está vinculado a outra entrevista")
+            st["chamados"] = sorted((c.tipo.value, c.cd_solicitacao) for c in vinculo.chamados)
+            st["cd_pacote"] = vinculo.cd_pacote
+            self.por_chamado.update({c.cd_solicitacao: eid for c in vinculo.chamados})
+            st["situacao"], st["atualizado"] = "CONFIRMADA", _agora()
+        return Confirmacao(id=eid, situacao="CONFIRMADA", chamados=[ChamadoGerado(tipo=t, cd_solicitacao=cd) for t, cd in st["chamados"]],
+                           cd_pacote=st["cd_pacote"])
+
+    def escopo_do_chamado(self, cd_solicitacao) -> EscopoChamado:
+        eid = self.por_chamado[cd_solicitacao]
+        st = self.estado[eid]
+        tipo = next(t for t, cd in st["chamados"] if cd == cd_solicitacao)
+        vs = [VersaoEscopo(versao=n, origem=v["origem"], cd_usuario=v["cd_usuario"], criado_em=v["criado_em"].isoformat(),
+                           conteudo=v["conteudo"]) for n, v in sorted(st["versoes"].items())]
+        return EscopoChamado(cd_solicitacao=cd_solicitacao, entrevista_id=eid, tipo=tipo, cd_pacote=st["cd_pacote"], versoes=vs)
+
+    def pendentes(self, horas) -> list[EntrevistaPendente]:
+        limite = _agora() - datetime.timedelta(hours=horas)
+        return [EntrevistaPendente(id=eid, cd_sistema=st["req"].cd_sistema, sigla=st["req"].sigla, atualizado_em=st["atualizado"].isoformat(),
+                                   grupos=[g["tipo"] for g in st["versoes"][1]["conteudo"]["grupos"]])
+                for eid, st in sorted(self.estado.items(), key=lambda x: x[1]["atualizado"])
+                if st["situacao"] == "PENDENTE" and st["atualizado"] < limite]

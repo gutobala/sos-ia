@@ -1,0 +1,59 @@
+{
+  "$defs": {
+    "TipoRequisito": {
+      "description": "Define o desmembramento: um chamado por tipo ao confirmar.",
+      "enum": [
+        "CORRETIVO",
+        "EVOLUTIVO"
+      ],
+      "title": "TipoRequisito",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Item de GET /confirmacoes/pendentes: confirmação iniciada e não concluída (para reconciliar com o Oracle).",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "cd_sistema": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cd Sistema"
+    },
+    "sigla": {
+      "title": "Sigla",
+      "type": "string"
+    },
+    "atualizado_em": {
+      "title": "Atualizado Em",
+      "type": "string"
+    },
+    "grupos": {
+      "items": {
+        "$ref": "#/$defs/TipoRequisito"
+      },
+      "title": "Grupos",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "sigla",
+    "atualizado_em",
+    "grupos"
+  ],
+  "title": "EntrevistaPendente",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/EntrevistaPendente.schema.json",
+  "x-versao-contrato": "1.2.0"
+}

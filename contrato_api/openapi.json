@@ -92,6 +92,16 @@
             },
             "description": "Conflict"
           },
+          "422": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
           "503": {
             "content": {
               "application/json; charset=utf-8": {
@@ -101,16 +111,6 @@
               }
             },
             "description": "Service Unavailable"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
         }
       }
@@ -181,6 +181,16 @@
             },
             "description": "Conflict"
           },
+          "422": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
           "503": {
             "content": {
               "application/json; charset=utf-8": {
@@ -190,16 +200,6 @@
               }
             },
             "description": "Service Unavailable"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
         }
       }
@@ -280,6 +280,16 @@
             },
             "description": "Conflict"
           },
+          "422": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
           "503": {
             "content": {
               "application/json; charset=utf-8": {
@@ -289,16 +299,6 @@
               }
             },
             "description": "Service Unavailable"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
         }
       }
@@ -380,6 +380,16 @@
             },
             "description": "Conflict"
           },
+          "422": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
           "503": {
             "content": {
               "application/json; charset=utf-8": {
@@ -389,16 +399,6 @@
               }
             },
             "description": "Service Unavailable"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
         }
       }
@@ -406,6 +406,7 @@
     "/entrevistas/{eid}/contrato": {
       "post": {
         "summary": "Contrato",
+        "description": "Gera (ou devolve o já gerado) Escopo do Pedido. Numa entrevista PENDENTE/CONFIRMADA não muda a situação.",
         "operationId": "contrato_entrevistas__eid__contrato_post",
         "parameters": [
           {
@@ -469,6 +470,16 @@
             },
             "description": "Conflict"
           },
+          "422": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
           "503": {
             "content": {
               "application/json; charset=utf-8": {
@@ -478,16 +489,393 @@
               }
             },
             "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/entrevistas/{eid}/confirmacao": {
+      "post": {
+        "summary": "Confirmacao",
+        "description": "Passo 1 da confirmação: o Escopo do Pedido editado vira 1 ou 2 grupos (um chamado por tipo). A entrevista fica PENDENTE.\n409: já confirmada, contrato ainda não gerado ou `faltando` não vazio. 422: requisito com segmento inexistente.",
+        "operationId": "confirmacao_entrevistas__eid__confirmacao_post",
+        "parameters": [
+          {
+            "name": "eid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Eid"
+            }
           },
-          "422": {
-            "description": "Validation Error",
+          {
+            "name": "x-sosia-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Sosia-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EscopoEditado"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
             "content": {
-              "application/json": {
+              "application/json; charset=utf-8": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/EscopoConfirmado"
                 }
               }
             }
+          },
+          "401": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/entrevistas/{eid}/confirmacao/chamados": {
+      "post": {
+        "summary": "Vincular Chamados",
+        "description": "Passo 3: o SOS informa os CD_SOLICITACAO gravados no Oracle. Idempotente (repetição idêntica → 200 com o mesmo corpo).\n409: sem confirmação, tipos diferentes dos grupos, outros números numa entrevista já confirmada ou chamado de outra entrevista.\n422: tipo repetido ou 2 chamados sem cd_pacote.",
+        "operationId": "vincular_chamados_entrevistas__eid__confirmacao_chamados_post",
+        "parameters": [
+          {
+            "name": "eid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Eid"
+            }
+          },
+          {
+            "name": "x-sosia-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Sosia-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VinculoChamados"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Confirmacao"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/solicitacoes/{cd}/escopo": {
+      "get": {
+        "summary": "Escopo Do Chamado",
+        "description": "Versões do Escopo do Pedido de um chamado aberto pelo fluxo novo (0 = IA, 1 = usuário). 404 se o chamado não veio dele.",
+        "operationId": "escopo_do_chamado_solicitacoes__cd__escopo_get",
+        "parameters": [
+          {
+            "name": "cd",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Cd"
+            }
+          },
+          {
+            "name": "x-sosia-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Sosia-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/EscopoChamado"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/confirmacoes/pendentes": {
+      "get": {
+        "summary": "Confirmacoes Pendentes",
+        "description": "Entrevistas PENDENTE há mais de `horas`: o SOS pode ter gravado o chamado sem conseguir chamar /confirmacao/chamados.",
+        "operationId": "confirmacoes_pendentes_confirmacoes_pendentes_get",
+        "parameters": [
+          {
+            "name": "horas",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 720,
+              "minimum": 0,
+              "default": 1,
+              "title": "Horas"
+            }
+          },
+          {
+            "name": "x-sosia-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Sosia-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EntrevistaPendente"
+                  },
+                  "title": "Response Confirmacoes Pendentes Confirmacoes Pendentes Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         }
       }
@@ -547,6 +935,71 @@
         ],
         "title": "CandidatoFuncionalidade"
       },
+      "ChamadoGerado": {
+        "properties": {
+          "tipo": {
+            "$ref": "#/components/schemas/TipoRequisito"
+          },
+          "cd_solicitacao": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Cd Solicitacao",
+            "description": "TS_SOLICITACAO.CD_SOLICITACAO"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tipo",
+          "cd_solicitacao"
+        ],
+        "title": "ChamadoGerado"
+      },
+      "Confirmacao": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "versao_contrato": {
+            "type": "string",
+            "title": "Versao Contrato",
+            "default": "1.2.0"
+          },
+          "situacao": {
+            "type": "string",
+            "title": "Situacao",
+            "description": "CONFIRMADA"
+          },
+          "chamados": {
+            "items": {
+              "$ref": "#/components/schemas/ChamadoGerado"
+            },
+            "type": "array",
+            "title": "Chamados"
+          },
+          "cd_pacote": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cd Pacote"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "situacao",
+          "chamados"
+        ],
+        "title": "Confirmacao",
+        "description": "Saída de POST /entrevistas/{id}/confirmacao/chamados (idempotente)."
+      },
       "Contrato": {
         "properties": {
           "id": {
@@ -556,7 +1009,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.1.0"
+            "default": "1.2.0"
           },
           "titulo": {
             "type": "string",
@@ -704,6 +1157,50 @@
         "title": "DecisaoRegraDocumentada",
         "description": "Entrada de POST /entrevistas/{id}/regra."
       },
+      "EntrevistaPendente": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "cd_sistema": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cd Sistema"
+          },
+          "sigla": {
+            "type": "string",
+            "title": "Sigla"
+          },
+          "atualizado_em": {
+            "type": "string",
+            "title": "Atualizado Em"
+          },
+          "grupos": {
+            "items": {
+              "$ref": "#/components/schemas/TipoRequisito"
+            },
+            "type": "array",
+            "title": "Grupos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "sigla",
+          "atualizado_em",
+          "grupos"
+        ],
+        "title": "EntrevistaPendente",
+        "description": "Item de GET /confirmacoes/pendentes: confirmação iniciada e não concluída (para reconciliar com o Oracle)."
+      },
       "Erro": {
         "properties": {
           "erro": {
@@ -729,6 +1226,181 @@
         ],
         "title": "Erro"
       },
+      "EscopoChamado": {
+        "properties": {
+          "cd_solicitacao": {
+            "type": "integer",
+            "title": "Cd Solicitacao"
+          },
+          "entrevista_id": {
+            "type": "string",
+            "title": "Entrevista Id"
+          },
+          "tipo": {
+            "$ref": "#/components/schemas/TipoRequisito"
+          },
+          "cd_pacote": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cd Pacote"
+          },
+          "versoes": {
+            "items": {
+              "$ref": "#/components/schemas/VersaoEscopo"
+            },
+            "type": "array",
+            "title": "Versoes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "cd_solicitacao",
+          "entrevista_id",
+          "tipo",
+          "versoes"
+        ],
+        "title": "EscopoChamado",
+        "description": "Saída de GET /solicitacoes/{cd}/escopo."
+      },
+      "EscopoConfirmado": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "versao_contrato": {
+            "type": "string",
+            "title": "Versao Contrato",
+            "default": "1.2.0"
+          },
+          "situacao": {
+            "type": "string",
+            "title": "Situacao",
+            "description": "PENDENTE"
+          },
+          "grupos": {
+            "items": {
+              "$ref": "#/components/schemas/GrupoChamado"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 1,
+            "title": "Grupos",
+            "description": "CORRETIVO antes de EVOLUTIVO"
+          },
+          "analise_ia": {
+            "type": "boolean",
+            "title": "Analise Ia"
+          },
+          "nota": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Nota"
+          },
+          "regra_documentada": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegraDocumentada"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "só quando aceita: trecho a anexar ao chamado"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "situacao",
+          "grupos",
+          "analise_ia",
+          "nota"
+        ],
+        "title": "EscopoConfirmado",
+        "description": "Saída de POST /entrevistas/{id}/confirmacao. A entrevista fica PENDENTE até POST /confirmacao/chamados."
+      },
+      "EscopoEditado": {
+        "properties": {
+          "titulo": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Titulo"
+          },
+          "objetivo": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Objetivo"
+          },
+          "requisitos": {
+            "items": {
+              "$ref": "#/components/schemas/RequisitoEditado"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "minItems": 1,
+            "title": "Requisitos"
+          },
+          "fora_escopo": {
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Fora Escopo"
+          },
+          "duvidas": {
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Duvidas"
+          },
+          "integracoes": {
+            "items": {
+              "$ref": "#/components/schemas/Integracao"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Integracoes"
+          },
+          "cd_usuario": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cd Usuario",
+            "description": "session(\"CD_USUARIO\") do SOS, para auditoria (nunca o nome)"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "titulo",
+          "objetivo",
+          "requisitos"
+        ],
+        "title": "EscopoEditado",
+        "description": "Entrada de POST /entrevistas/{id}/confirmacao: o Escopo do Pedido como o usuário confirmou na tela.\nO tipo de cada requisito NÃO vem daqui: é sempre o do segmento de origem."
+      },
       "EstadoEntrevista": {
         "properties": {
           "id": {
@@ -738,7 +1410,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.1.0"
+            "default": "1.2.0"
           },
           "rodada": {
             "type": "integer",
@@ -827,18 +1499,40 @@
         "title": "EstadoEntrevista",
         "description": "Resposta de POST /entrevistas, POST /entrevistas/{id}/respostas e GET /entrevistas/{id}."
       },
-      "HTTPValidationError": {
+      "GrupoChamado": {
         "properties": {
-          "detail": {
+          "tipo": {
+            "$ref": "#/components/schemas/TipoRequisito"
+          },
+          "titulo": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Titulo",
+            "description": "para DS_RESUMO; com 2 grupos, termina em (correção) ou (evolução)"
+          },
+          "texto": {
+            "type": "string",
+            "title": "Texto",
+            "description": "Escopo do Pedido do grupo em texto corrido, para DS_SOLICITACAO (o SOS corta em bytes)"
+          },
+          "requisitos": {
             "items": {
-              "$ref": "#/components/schemas/ValidationError"
+              "$ref": "#/components/schemas/RequisitoEscopo"
             },
             "type": "array",
-            "title": "Detail"
+            "title": "Requisitos"
           }
         },
+        "additionalProperties": false,
         "type": "object",
-        "title": "HTTPValidationError"
+        "required": [
+          "tipo",
+          "titulo",
+          "texto",
+          "requisitos"
+        ],
+        "title": "GrupoChamado",
+        "description": "Um chamado a criar no SOS."
       },
       "Imagem": {
         "properties": {
@@ -902,6 +1596,16 @@
         ],
         "title": "Intencao",
         "description": "Opção do cardápio escolhida pelo usuário (a garantia não passa pela IA)."
+      },
+      "Natureza": {
+        "type": "string",
+        "enum": [
+          "CORRECAO",
+          "ALTERACAO",
+          "NOVO"
+        ],
+        "title": "Natureza",
+        "description": "De onde vem o requisito; separa as seções do texto e orienta a contagem (função alterada × incluída)."
       },
       "NovaEntrevista": {
         "properties": {
@@ -1061,6 +1765,74 @@
         ],
         "title": "RequisitoContrato"
       },
+      "RequisitoEditado": {
+        "properties": {
+          "segmento": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Segmento",
+            "description": "segmento de origem (Contrato.segmentos[].n); define o tipo e a natureza"
+          },
+          "descricao": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Descricao"
+          },
+          "criterio_aceite": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Criterio Aceite",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "segmento",
+          "descricao"
+        ],
+        "title": "RequisitoEditado"
+      },
+      "RequisitoEscopo": {
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "N",
+            "description": "número no Escopo do Pedido inteiro (o mesmo nos dois chamados)"
+          },
+          "tipo": {
+            "$ref": "#/components/schemas/TipoRequisito"
+          },
+          "natureza": {
+            "$ref": "#/components/schemas/Natureza"
+          },
+          "segmento": {
+            "type": "integer",
+            "title": "Segmento"
+          },
+          "descricao": {
+            "type": "string",
+            "title": "Descricao"
+          },
+          "criterio_aceite": {
+            "type": "string",
+            "title": "Criterio Aceite"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "n",
+          "tipo",
+          "natureza",
+          "segmento",
+          "descricao",
+          "criterio_aceite"
+        ],
+        "title": "RequisitoEscopo"
+      },
       "Resposta": {
         "properties": {
           "id": {
@@ -1114,7 +1886,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.1.0"
+            "default": "1.2.0"
           },
           "mock": {
             "type": "boolean",
@@ -1127,6 +1899,11 @@
           "banco": {
             "type": "boolean",
             "title": "Banco"
+          },
+          "banco_app": {
+            "type": "boolean",
+            "title": "Banco App",
+            "description": "banco da aplicação (entrevistas e Escopo do Pedido confirmado)"
           },
           "embeddings": {
             "type": "string",
@@ -1145,6 +1922,7 @@
           "mock",
           "llm",
           "banco",
+          "banco_app",
           "embeddings",
           "modo_pii"
         ],
@@ -1265,45 +2043,81 @@
         ],
         "title": "TipoSegmento"
       },
-      "ValidationError": {
+      "VersaoEscopo": {
         "properties": {
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "type": "array",
-            "title": "Location"
+          "versao": {
+            "type": "integer",
+            "title": "Versao"
           },
-          "msg": {
+          "origem": {
+            "type": "integer",
+            "title": "Origem",
+            "description": "0 = IA, 1 = usuário, 2 = Sustentação"
+          },
+          "cd_usuario": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cd Usuario"
+          },
+          "criado_em": {
             "type": "string",
-            "title": "Message"
+            "title": "Criado Em"
           },
-          "type": {
-            "type": "string",
-            "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
+          "conteudo": {
+            "additionalProperties": true,
             "type": "object",
-            "title": "Context"
+            "title": "Conteudo"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
-          "loc",
-          "msg",
-          "type"
+          "versao",
+          "origem",
+          "criado_em",
+          "conteudo"
         ],
-        "title": "ValidationError"
+        "title": "VersaoEscopo"
+      },
+      "VinculoChamados": {
+        "properties": {
+          "chamados": {
+            "items": {
+              "$ref": "#/components/schemas/ChamadoGerado"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 1,
+            "title": "Chamados",
+            "description": "um por grupo da confirmação"
+          },
+          "cd_pacote": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cd Pacote",
+            "description": "TS_PACOTE.CD_PACOTE; obrigatório com 2 chamados"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "chamados"
+        ],
+        "title": "VinculoChamados",
+        "description": "Entrada de POST /entrevistas/{id}/confirmacao/chamados: o que o SOS gravou no Oracle."
       }
     }
   }

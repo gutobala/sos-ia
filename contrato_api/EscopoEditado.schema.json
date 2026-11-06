@@ -1,0 +1,132 @@
+{
+  "$defs": {
+    "Integracao": {
+      "additionalProperties": false,
+      "properties": {
+        "sistema": {
+          "title": "Sistema",
+          "type": "string"
+        },
+        "sentido": {
+          "pattern": "^(BUSCA|GRAVA|AMBOS)$",
+          "title": "Sentido",
+          "type": "string"
+        },
+        "descricao": {
+          "title": "Descricao",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sistema",
+        "sentido",
+        "descricao"
+      ],
+      "title": "Integracao",
+      "type": "object"
+    },
+    "RequisitoEditado": {
+      "additionalProperties": false,
+      "properties": {
+        "segmento": {
+          "description": "segmento de origem (Contrato.segmentos[].n); define o tipo e a natureza",
+          "minimum": 1,
+          "title": "Segmento",
+          "type": "integer"
+        },
+        "descricao": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Descricao",
+          "type": "string"
+        },
+        "criterio_aceite": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Criterio Aceite",
+          "type": "string"
+        }
+      },
+      "required": [
+        "segmento",
+        "descricao"
+      ],
+      "title": "RequisitoEditado",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Entrada de POST /entrevistas/{id}/confirmacao: o Escopo do Pedido como o usuário confirmou na tela.\nO tipo de cada requisito NÃO vem daqui: é sempre o do segmento de origem.",
+  "properties": {
+    "titulo": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Titulo",
+      "type": "string"
+    },
+    "objetivo": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Objetivo",
+      "type": "string"
+    },
+    "requisitos": {
+      "items": {
+        "$ref": "#/$defs/RequisitoEditado"
+      },
+      "maxItems": 30,
+      "minItems": 1,
+      "title": "Requisitos",
+      "type": "array"
+    },
+    "fora_escopo": {
+      "items": {
+        "maxLength": 1000,
+        "type": "string"
+      },
+      "maxItems": 30,
+      "title": "Fora Escopo",
+      "type": "array"
+    },
+    "duvidas": {
+      "items": {
+        "maxLength": 1000,
+        "type": "string"
+      },
+      "maxItems": 30,
+      "title": "Duvidas",
+      "type": "array"
+    },
+    "integracoes": {
+      "items": {
+        "$ref": "#/$defs/Integracao"
+      },
+      "maxItems": 20,
+      "title": "Integracoes",
+      "type": "array"
+    },
+    "cd_usuario": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "session(\"CD_USUARIO\") do SOS, para auditoria (nunca o nome)",
+      "title": "Cd Usuario"
+    }
+  },
+  "required": [
+    "titulo",
+    "objetivo",
+    "requisitos"
+  ],
+  "title": "EscopoEditado",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/EscopoEditado.schema.json",
+  "x-versao-contrato": "1.2.0"
+}

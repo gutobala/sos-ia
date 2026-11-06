@@ -1,0 +1,201 @@
+{
+  "$defs": {
+    "GrupoChamado": {
+      "additionalProperties": false,
+      "description": "Um chamado a criar no SOS.",
+      "properties": {
+        "tipo": {
+          "$ref": "#/$defs/TipoRequisito"
+        },
+        "titulo": {
+          "description": "para DS_RESUMO; com 2 grupos, termina em (correção) ou (evolução)",
+          "maxLength": 200,
+          "title": "Titulo",
+          "type": "string"
+        },
+        "texto": {
+          "description": "Escopo do Pedido do grupo em texto corrido, para DS_SOLICITACAO (o SOS corta em bytes)",
+          "title": "Texto",
+          "type": "string"
+        },
+        "requisitos": {
+          "items": {
+            "$ref": "#/$defs/RequisitoEscopo"
+          },
+          "title": "Requisitos",
+          "type": "array"
+        }
+      },
+      "required": [
+        "tipo",
+        "titulo",
+        "texto",
+        "requisitos"
+      ],
+      "title": "GrupoChamado",
+      "type": "object"
+    },
+    "Natureza": {
+      "description": "De onde vem o requisito; separa as seções do texto e orienta a contagem (função alterada × incluída).",
+      "enum": [
+        "CORRECAO",
+        "ALTERACAO",
+        "NOVO"
+      ],
+      "title": "Natureza",
+      "type": "string"
+    },
+    "RegraDocumentada": {
+      "additionalProperties": false,
+      "properties": {
+        "pagina": {
+          "title": "Pagina",
+          "type": "string"
+        },
+        "secao": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Secao"
+        },
+        "trecho": {
+          "title": "Trecho",
+          "type": "string"
+        },
+        "similaridade": {
+          "title": "Similaridade",
+          "type": "number"
+        },
+        "orientacao": {
+          "description": "texto para o usuário: o comportamento parece seguir esta regra; se quiser mudá-la, é evolutivo",
+          "title": "Orientacao",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pagina",
+        "trecho",
+        "similaridade",
+        "orientacao"
+      ],
+      "title": "RegraDocumentada",
+      "type": "object"
+    },
+    "RequisitoEscopo": {
+      "additionalProperties": false,
+      "properties": {
+        "n": {
+          "description": "número no Escopo do Pedido inteiro (o mesmo nos dois chamados)",
+          "minimum": 1,
+          "title": "N",
+          "type": "integer"
+        },
+        "tipo": {
+          "$ref": "#/$defs/TipoRequisito"
+        },
+        "natureza": {
+          "$ref": "#/$defs/Natureza"
+        },
+        "segmento": {
+          "title": "Segmento",
+          "type": "integer"
+        },
+        "descricao": {
+          "title": "Descricao",
+          "type": "string"
+        },
+        "criterio_aceite": {
+          "title": "Criterio Aceite",
+          "type": "string"
+        }
+      },
+      "required": [
+        "n",
+        "tipo",
+        "natureza",
+        "segmento",
+        "descricao",
+        "criterio_aceite"
+      ],
+      "title": "RequisitoEscopo",
+      "type": "object"
+    },
+    "TipoRequisito": {
+      "description": "Define o desmembramento: um chamado por tipo ao confirmar.",
+      "enum": [
+        "CORRETIVO",
+        "EVOLUTIVO"
+      ],
+      "title": "TipoRequisito",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Saída de POST /entrevistas/{id}/confirmacao. A entrevista fica PENDENTE até POST /confirmacao/chamados.",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "versao_contrato": {
+      "default": "1.2.0",
+      "title": "Versao Contrato",
+      "type": "string"
+    },
+    "situacao": {
+      "description": "PENDENTE",
+      "title": "Situacao",
+      "type": "string"
+    },
+    "grupos": {
+      "description": "CORRETIVO antes de EVOLUTIVO",
+      "items": {
+        "$ref": "#/$defs/GrupoChamado"
+      },
+      "maxItems": 2,
+      "minItems": 1,
+      "title": "Grupos",
+      "type": "array"
+    },
+    "analise_ia": {
+      "title": "Analise Ia",
+      "type": "boolean"
+    },
+    "nota": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Nota",
+      "type": "integer"
+    },
+    "regra_documentada": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RegraDocumentada"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "só quando aceita: trecho a anexar ao chamado"
+    }
+  },
+  "required": [
+    "id",
+    "situacao",
+    "grupos",
+    "analise_ia",
+    "nota"
+  ],
+  "title": "EscopoConfirmado",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/EscopoConfirmado.schema.json",
+  "x-versao-contrato": "1.2.0"
+}

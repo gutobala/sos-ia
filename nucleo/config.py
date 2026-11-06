@@ -41,6 +41,9 @@ MOCK = env("SOSIA_MOCK", "0") == "1"
 # Token compartilhado SOS -> serviço (cabeçalho X-SOSIA-Token). No modo mock, sem token definido, vale "mock".
 TOKEN = env("SOSIA_TOKEN") or ("mock" if MOCK else None)
 DSN = env("SOSIA_DSN", "host=127.0.0.1 port=5433 dbname=sosia user=apf password=apf_local sslmode=disable gssencmode=disable")
+# banco da APLICAÇÃO (entrevistas, Escopo do Pedido confirmado, vínculo com os chamados): instância e volume próprios, com backup
+APP_DSN = env("SOSIA_APP_DSN", "host=127.0.0.1 port=5435 dbname=sosia_app user=sosia_app password=sosia_app_local "
+                               "sslmode=disable gssencmode=disable")
 LLM = env("SOSIA_LLM", "openai")            # openai (testes, chave pessoal) | azure (produção, contrato)
 EMB = env("SOSIA_EMB", "azure")             # azure (text-embedding-3-large; padrão desde 05/11/2026) | e5 (CPU local)
 # local: anonimiza antes do LLM e troca imagens pelo OCR anonimizado (obrigatório fora do contrato Azure)

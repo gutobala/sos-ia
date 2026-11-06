@@ -12,6 +12,9 @@ Fluxo (contrato em modelos.py; plano do SOS em leia-o-sistema-de-floating-shell.
              comentário vai para as dúvidas. Enquanto não decidir, `faltando` traz o slot "decisao_regra".
   contrato   LLM (prompts/contrato_v1.md) escreve título, objetivo, requisitos com critério de aceite, fora de escopo, integrações
              e dúvidas; `faltando` e `pode_confirmar` são sempre da regra determinística (nunca do LLM).
+  confirmação (contrato 1.2.0; regras em confirmacao.py) o SOS manda o Escopo do Pedido editado → grupos (um chamado por tipo)
+             e versões v0/v1 → PENDENTE; depois informa os CD_SOLICITACAO → CONFIRMADA.
+Dois bancos: o do núcleo (RAG, só leitura aqui) e o da aplicação (entrevistas; db.conectar_app). Toda gravação vai para o segundo.
 Sem LLM (chave ausente, erro ou recusa): roteiro fixo com os mesmos slots e analise_ia=false — o SOS segue funcionando.
 O LLM nunca decide sozinho o que bloqueia: ele preenche e pergunta; quem diz se o slot está cheio é roteiros.revalida.
 """
@@ -20,16 +23,18 @@ import os
 import re
 import uuid
 
+import psycopg
 import yaml
 
 from .. import config, embeddings, llm, pii
 from .. import db as dbm
 from ..rag import busca, catalogo
-from . import armazem, roteiros
+from . import armazem, confirmacao as cf, roteiros
 from .mock import PERGUNTA_SLOT, SLOT_PRINCIPAL
-from .modelos import (CandidatoFuncionalidade, Contrato, DecisaoRegra, DecisaoRegraDocumentada, EstadoEntrevista, Integracao,
-                      Intencao, NovaEntrevista, Pergunta, RegraDocumentada, RequisitoContrato, Respostas, Segmento, TipoRequisito,
-                      TipoSegmento)
+from .modelos import (CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra, DecisaoRegraDocumentada,
+                      EntrevistaPendente, EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista, Integracao, Intencao,
+                      NovaEntrevista, Pergunta, RegraDocumentada, RequisitoContrato, Respostas, Segmento, TipoRequisito, TipoSegmento,
+                      VersaoEscopo, VinculoChamados)
 
 MAX_RODADAS = 2
 MAX_PERGUNTAS = 5
@@ -294,9 +299,22 @@ def roteiro_fixo(est):
 
 
 # ---------------------------------------------------------------- motor
+def _situacao(est, atual):
+    """Situação depois de uma rodada; PENDENTE/CONFIRMADA só mudam pela confirmação."""
+    if atual in cf.SITUACOES_TRAVADAS:
+        return atual
+    return "EM_ANDAMENTO" if est["perguntas"] else "PRONTA"
+
+
+def _anonimiza_resposta(texto, conn, max_car):
+    """Respostas e comentários seguem o texto do relato: anonimizados em todo modo, menos no contrato."""
+    return texto if config.MODO_PII == "contrato" else pii.anonimizar(texto, conn, max_car)
+
+
 class Motor:
-    def __init__(self, conectar=None):
+    def __init__(self, conectar=None, conectar_app=None):
         self.conectar = conectar or dbm.conectar
+        self.conectar_app = conectar_app or dbm.conectar_app
 
     # ---- interno
     def _rodada(self, conn, eid, est, imagens=None):
@@ -348,8 +366,9 @@ class Motor:
     # ---- API
     def criar(self, req: NovaEntrevista) -> EstadoEntrevista:
         eid = str(uuid.uuid4())
-        conn = self.conectar()
+        conn, app = self.conectar(), None
         try:
+            app = self.conectar_app()
             sid, wiki = resolve_sistema(conn, req.sigla)
             texto, imgs, notas = pii.prepara(req.relato, [i.model_dump() for i in req.imagens], conn)
             est = dict(intencao=req.intencao.value, sigla=req.sigla, texto=texto, notas_pii=notas, rodada=1, segs=[], perguntas=[],
@@ -359,27 +378,31 @@ class Motor:
             except Exception as e:  # noqa: BLE001  (sem RAG a entrevista continua)
                 conn.rollback()
                 est["notas_pii"].append(f"RAG indisponível: {type(e).__name__}")
-            armazem.criar(conn, eid, req, sid, config.MODO_PII, True, est, 0, RETENCAO_DIAS)
-            est["candidatos"] = self._reordena_candidatos(conn, eid, est)
-            ia = self._rodada(conn, eid, est, imgs)
-            armazem.salvar(conn, eid, est["rodada"], "EM_ANDAMENTO" if est["perguntas"] else "PRONTA", ia, est["nota"], est)
-            conn.commit()
+            armazem.criar(app, eid, req, sid, config.MODO_PII, True, est, 0, RETENCAO_DIAS)
+            est["candidatos"] = self._reordena_candidatos(app, eid, est)
+            ia = self._rodada(app, eid, est, imgs)
+            armazem.salvar(app, eid, est["rodada"], _situacao(est, None), ia, est["nota"], est)
+            app.commit()
             return self._estado(eid, est, ia)
         finally:
             conn.close()
+            if app is not None:
+                app.close()
 
     def obter(self, eid) -> EstadoEntrevista:
-        conn = self.conectar()
+        app = self.conectar_app()
         try:
-            row, est = self._carrega(conn, eid)
+            row, est = self._carrega(app, eid)
             return self._estado(eid, est, row["analise_ia"])
         finally:
-            conn.close()
+            app.close()
 
     def responder(self, eid, resp: Respostas) -> EstadoEntrevista:
-        conn = self.conectar()
+        app = self.conectar_app()
+        conn = None
         try:
-            row, est = self._carrega(conn, eid)
+            row, est = self._carrega(app, eid)
+            cf.verifica_aberta(row["situacao"])
             if not est["perguntas"]:
                 return self._estado(eid, est, row["analise_ia"])
             por_id = {p["id"]: p for p in est["perguntas"]}
@@ -388,7 +411,9 @@ class Motor:
                 p = por_id.get(r.id)
                 if not p or not r.texto.strip():
                     continue
-                txt = pii.anonimizar(r.texto.strip(), conn, 5000) if config.MODO_PII == "local" else r.texto.strip()
+                if conn is None:
+                    conn = self.conectar()
+                txt = _anonimiza_resposta(r.texto.strip(), conn, 5000)
                 est["respostas"].append(dict(id=r.id, segmento=p["segmento"], slot=p["slot"], pergunta=p["texto"], resposta=txt))
                 if p["slot"] == "gatilho":
                     continue
@@ -398,7 +423,7 @@ class Motor:
                               for x in s.slots]
                         segs[i] = roteiros.revalida(s.model_copy(update={"slots": sl}))
             est["segs"] = [s.model_dump(mode="json") for s in segs]
-            armazem.evento(conn, eid, est["rodada"], "respostas", conteudo=[dict(id=r.id, car=len(r.texto)) for r in resp.respostas])
+            armazem.evento(app, eid, est["rodada"], "respostas", conteudo=[dict(id=r.id, car=len(r.texto)) for r in resp.respostas])
             est["rodada"] += 1
             ia = row["analise_ia"]
             if est["rodada"] > MAX_RODADAS or (not roteiros.faltando(segs) and not _pendentes(est)):
@@ -406,25 +431,30 @@ class Motor:
                 est["nota"] = nota(segs, est["nota"])
                 est["dicas"] = [f"Falta: {f.rotulo}" for f in roteiros.faltando(segs)][:3]
             else:
-                ia = self._rodada(conn, eid, est) and ia
+                ia = self._rodada(app, eid, est) and ia
             est["contrato"] = None
-            armazem.salvar(conn, eid, est["rodada"], "EM_ANDAMENTO" if est["perguntas"] else "PRONTA", ia, est["nota"], est)
-            conn.commit()
+            armazem.salvar(app, eid, est["rodada"], "EM_ANDAMENTO" if est["perguntas"] else "PRONTA", ia, est["nota"], est)
+            app.commit()
             return self._estado(eid, est, ia)
         finally:
-            conn.close()
+            app.close()
+            if conn is not None:
+                conn.close()
 
     def decidir_regra(self, eid, dec: DecisaoRegraDocumentada) -> EstadoEntrevista:
-        conn = self.conectar()
+        app = self.conectar_app()
+        conn = None
         try:
-            row, est = self._carrega(conn, eid)
+            row, est = self._carrega(app, eid)
+            cf.verifica_aberta(row["situacao"])
             if not est.get("regra"):
                 raise ValueError("a entrevista não tem regra documentada")
             if est.get("decisao"):
                 raise ValueError("a regra documentada já foi decidida")
             com = (dec.comentario or "").strip()
-            if com and config.MODO_PII == "local":
-                com = pii.anonimizar(com, conn, 2000)
+            if com:
+                conn = self.conectar()
+                com = _anonimiza_resposta(com, conn, 2000)
             if com:
                 est["respostas"].append(dict(id="regra", segmento=1, slot="decisao_regra", pergunta="Comentário sobre a regra documentada",
                                              resposta=com))
@@ -438,53 +468,131 @@ class Motor:
                         x.model_copy(update={"valor": com}) if x.codigo == "o_que_muda" else x for x in novo.slots]}))
                 est["segs"] = [s.model_dump(mode="json") for s in [novo] + segs[1:]]
                 est["rodada"] = min(est["rodada"], MAX_RODADAS)  # mudou de roteiro: mais uma rodada de perguntas
-                armazem.evento(conn, eid, est["rodada"], "decisao_regra", conteudo=dict(aceita=True))
-                ia = self._rodada(conn, eid, est) and ia
+                armazem.evento(app, eid, est["rodada"], "decisao_regra", conteudo=dict(aceita=True))
+                ia = self._rodada(app, eid, est) and ia
             else:
                 est["decisao"] = DecisaoRegra.RECUSADA.value
-                armazem.evento(conn, eid, est["rodada"], "decisao_regra", conteudo=dict(aceita=False))
+                armazem.evento(app, eid, est["rodada"], "decisao_regra", conteudo=dict(aceita=False))
             est["contrato"] = None
-            armazem.salvar(conn, eid, est["rodada"], "EM_ANDAMENTO" if est["perguntas"] else "PRONTA", ia, est["nota"], est)
-            conn.commit()
+            armazem.salvar(app, eid, est["rodada"], "EM_ANDAMENTO" if est["perguntas"] else "PRONTA", ia, est["nota"], est)
+            app.commit()
             return self._estado(eid, est, ia)
         finally:
-            conn.close()
+            app.close()
+            if conn is not None:
+                conn.close()
+
+    def _monta_contrato(self, app, eid, row, est, gerar=True):
+        """Contrato a partir do estado. Gera pelo LLM (ou pelo roteiro fixo) só se ainda não houver um em est["contrato"]."""
+        segs = [roteiros.revalida(s) for s in _segs(est)]
+        ia = row["analise_ia"]
+        if est.get("contrato"):
+            c = est["contrato"]
+        else:
+            if not gerar:
+                raise cf.ConfirmacaoInvalida("o Escopo do Pedido ainda não foi gerado: chame POST /entrevistas/{id}/contrato antes")
+            c = None
+            if llm.disponivel():
+                try:
+                    c, info = llm.json_estruturado(self._prompt_contrato(est, segs), SCHEMA_CONTRATO, "contrato", "chat")
+                    armazem.evento(app, eid, est["rodada"], "llm_contrato", info, c)
+                except Exception as e:  # noqa: BLE001
+                    armazem.evento(app, eid, est["rodada"], "fallback", conteudo=dict(erro=f"{type(e).__name__}: {str(e)[:400]}"))
+            if c is None:
+                c, ia = contrato_fixo(est, segs), False
+            est["contrato"] = c
+        n_seg = {s.n for s in segs}
+        reqs = [RequisitoContrato(n=i, tipo=TipoRequisito(r["tipo"]), segmento=r["segmento"] if r["segmento"] in n_seg else 1,
+                                  descricao=r["descricao"].strip(), criterio_aceite=r["criterio_aceite"].strip() or "Definir com o usuário.")
+                for i, r in enumerate(c["requisitos"], 1) if r["descricao"].strip()]
+        falt = roteiros.faltando_com_regra(segs, bool(est.get("regra")), est.get("decisao"))
+        return Contrato(id=eid, titulo=c["titulo"].strip()[:200] or f"{est['sigla']} - pedido", objetivo=c["objetivo"].strip(),
+                        requisitos=reqs, fora_escopo=[x for x in c["fora_escopo"] if x.strip()], duvidas=[x for x in c["duvidas"] if x.strip()],
+                        integracoes=[Integracao(**x) for x in c["integracoes"]], segmentos=segs, nota=est["nota"], faltando=falt,
+                        regra_documentada=RegraDocumentada.model_validate(est["regra"]) if est.get("regra") else None,
+                        decisao_regra=est.get("decisao"),
+                        pode_confirmar=not falt, analise_ia=ia)
 
     def contrato(self, eid) -> Contrato:
-        conn = self.conectar()
+        app = self.conectar_app()
         try:
-            row, est = self._carrega(conn, eid)
-            segs = [roteiros.revalida(s) for s in _segs(est)]
-            ia = row["analise_ia"]
-            if est.get("contrato"):
-                c = est["contrato"]
-            else:
-                c = None
-                if llm.disponivel():
-                    try:
-                        c, info = llm.json_estruturado(self._prompt_contrato(est, segs), SCHEMA_CONTRATO, "contrato", "chat")
-                        armazem.evento(conn, eid, est["rodada"], "llm_contrato", info, c)
-                    except Exception as e:  # noqa: BLE001
-                        armazem.evento(conn, eid, est["rodada"], "fallback", conteudo=dict(erro=f"{type(e).__name__}: {str(e)[:400]}"))
-                if c is None:
-                    c, ia = contrato_fixo(est, segs), False
-                est["contrato"] = c
-            n_seg = {s.n for s in segs}
-            reqs = [RequisitoContrato(n=i, tipo=TipoRequisito(r["tipo"]), segmento=r["segmento"] if r["segmento"] in n_seg else 1,
-                                      descricao=r["descricao"].strip(), criterio_aceite=r["criterio_aceite"].strip() or "Definir com o usuário.")
-                    for i, r in enumerate(c["requisitos"], 1) if r["descricao"].strip()]
-            falt = roteiros.faltando_com_regra(segs, bool(est.get("regra")), est.get("decisao"))
-            out = Contrato(id=eid, titulo=c["titulo"].strip()[:200] or f"{est['sigla']} - pedido", objetivo=c["objetivo"].strip(),
-                           requisitos=reqs, fora_escopo=[x for x in c["fora_escopo"] if x.strip()], duvidas=[x for x in c["duvidas"] if x.strip()],
-                           integracoes=[Integracao(**x) for x in c["integracoes"]], segmentos=segs, nota=est["nota"], faltando=falt,
-                           regra_documentada=RegraDocumentada.model_validate(est["regra"]) if est.get("regra") else None,
-                           decisao_regra=est.get("decisao"),
-                           pode_confirmar=not falt, analise_ia=ia)
-            armazem.salvar(conn, eid, est["rodada"], "CONTRATO_GERADO", ia, est["nota"], est)
-            conn.commit()
+            row, est = self._carrega(app, eid)
+            out = self._monta_contrato(app, eid, row, est)
+            sit = row["situacao"] if row["situacao"] in cf.SITUACOES_TRAVADAS else "CONTRATO_GERADO"
+            armazem.salvar(app, eid, est["rodada"], sit, out.analise_ia, est["nota"], est)
+            app.commit()
             return out
         finally:
-            conn.close()
+            app.close()
+
+    # ---- confirmação (contrato 1.2.0)
+    def confirmacao(self, eid, escopo: EscopoEditado) -> EscopoConfirmado:
+        app = self.conectar_app()
+        try:
+            row, est = self._carrega(app, eid)
+            cf.verifica_aberta(row["situacao"])
+            k = self._monta_contrato(app, eid, row, est, gerar=False)
+            cf.verifica_confirmavel(k)
+            grupos = cf.monta_grupos(k, escopo)
+            armazem.grava_escopo(app, eid, 0, 0, None, k.model_dump(mode="json"))
+            armazem.grava_escopo(app, eid, 1, 1, escopo.cd_usuario,
+                                 dict(escopo=escopo.model_dump(mode="json"), grupos=[g.model_dump(mode="json") for g in grupos]))
+            armazem.evento(app, eid, est["rodada"], "confirmacao",
+                           conteudo=dict(grupos=[g.tipo.value for g in grupos], requisitos=len(escopo.requisitos)))
+            armazem.muda_situacao(app, eid, "PENDENTE")
+            app.commit()
+            return EscopoConfirmado(id=eid, situacao="PENDENTE", grupos=grupos, analise_ia=k.analise_ia, nota=k.nota,
+                                    regra_documentada=cf.regra_aceita(k))
+        finally:
+            app.close()
+
+    def vincular(self, eid, vinculo: VinculoChamados) -> Confirmacao:
+        app = self.conectar_app()
+        try:
+            row, est = self._carrega(app, eid)
+            if row["situacao"] not in cf.SITUACOES_TRAVADAS:
+                raise cf.ConfirmacaoInvalida("a entrevista não tem Escopo do Pedido confirmado: chame POST /entrevistas/{id}/confirmacao antes")
+            v1 = armazem.escopo(app, eid, 1)
+            tipos = [g["tipo"] for g in v1["conteudo"]["grupos"]]
+            if not cf.valida_vinculo(tipos, vinculo, armazem.chamados(app, eid)):
+                try:
+                    armazem.vincula(app, eid, [(c.tipo.value, c.cd_solicitacao) for c in vinculo.chamados], vinculo.cd_pacote)
+                except psycopg.errors.UniqueViolation:
+                    app.rollback()
+                    raise cf.ConfirmacaoInvalida("um dos chamados informados já está vinculado a outra entrevista")
+                armazem.muda_situacao(app, eid, "CONFIRMADA")
+                armazem.evento(app, eid, est["rodada"], "vinculo", conteudo=vinculo.model_dump(mode="json"))
+                app.commit()
+            return self._confirmacao(eid, armazem.chamados(app, eid))
+        finally:
+            app.close()
+
+    @staticmethod
+    def _confirmacao(eid, linhas):
+        return Confirmacao(id=eid, situacao="CONFIRMADA",
+                           chamados=[ChamadoGerado(tipo=r["tipo"], cd_solicitacao=r["cd_solicitacao"]) for r in linhas],
+                           cd_pacote=next((r["cd_pacote"] for r in linhas if r["cd_pacote"]), None))
+
+    def escopo_do_chamado(self, cd_solicitacao) -> EscopoChamado:
+        app = self.conectar_app()
+        try:
+            ch = armazem.chamado(app, cd_solicitacao)
+            if not ch:
+                raise KeyError(cd_solicitacao)
+            vs = [VersaoEscopo(versao=v["versao"], origem=v["origem"], cd_usuario=v["cd_usuario"], criado_em=v["criado_em"].isoformat(),
+                               conteudo=v["conteudo"]) for v in armazem.versoes(app, ch["entrevista_id"])]
+            return EscopoChamado(cd_solicitacao=ch["cd_solicitacao"], entrevista_id=str(ch["entrevista_id"]), tipo=ch["tipo"],
+                                 cd_pacote=ch["cd_pacote"], versoes=vs)
+        finally:
+            app.close()
+
+    def pendentes(self, horas) -> list[EntrevistaPendente]:
+        app = self.conectar_app()
+        try:
+            return [EntrevistaPendente(id=str(r["id"]), cd_sistema=r["cd_sistema"], sigla=r["sigla"], atualizado_em=r["atualizado_em"].isoformat(),
+                                       grupos=[g["tipo"] for g in (r["grupos"] or [])]) for r in armazem.pendentes(app, horas)]
+        finally:
+            app.close()
 
     @staticmethod
     def _prompt_contrato(est, segs):

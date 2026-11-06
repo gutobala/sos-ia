@@ -3,13 +3,17 @@
 Textos em português, UTF-8. O SOS (proxy entrevistaApi.asp) nunca envia o nome do solicitante.
 """
 from enum import Enum
-from typing import Optional
+from typing import Annotated, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-VERSAO_CONTRATO = "1.1.0"
+VERSAO_CONTRATO = "1.2.0"
 # 1.1.0 (05/11/2026, aditiva): decisão do usuário sobre a regra documentada — POST /entrevistas/{id}/regra, campo
 #        `decisao_regra` no estado e no contrato, `regra_documentada` no contrato, slot pseudo "decisao_regra" em `faltando`.
+# 1.2.0 (05/11/2026, aditiva): confirmação do Escopo do Pedido — POST /entrevistas/{id}/confirmacao (um chamado por tipo, no
+#        máximo 2), POST /entrevistas/{id}/confirmacao/chamados (vínculo com os CD_SOLICITACAO, idempotente),
+#        GET /solicitacoes/{cd}/escopo, GET /confirmacoes/pendentes; `banco_app` no /saude. Respostas, regra e contrato
+#        numa entrevista CONFIRMADA → 409.
 
 
 class Base(BaseModel):
@@ -173,6 +177,7 @@ class Saude(Base):
     mock: bool
     llm: bool
     banco: bool
+    banco_app: bool = Field(description="banco da aplicação (entrevistas e Escopo do Pedido confirmado)")
     embeddings: str
     modo_pii: str
 
@@ -180,3 +185,103 @@ class Saude(Base):
 class Erro(Base):
     erro: str
     detalhe: Optional[str] = None
+
+
+# ---------------------------------------------------------------- confirmação (1.2.0)
+class Natureza(str, Enum):
+    """De onde vem o requisito; separa as seções do texto e orienta a contagem (função alterada × incluída)."""
+    CORRECAO = "CORRECAO"     # segmento CORRETIVO
+    ALTERACAO = "ALTERACAO"   # segmento EVOLUTIVO_EXISTENTE
+    NOVO = "NOVO"             # segmento EVOLUTIVO_NOVO
+
+
+class RequisitoEditado(Base):
+    segmento: int = Field(ge=1, description="segmento de origem (Contrato.segmentos[].n); define o tipo e a natureza")
+    descricao: str = Field(min_length=1, max_length=2000)
+    criterio_aceite: str = Field(default="", max_length=2000)
+
+
+class EscopoEditado(Base):
+    """Entrada de POST /entrevistas/{id}/confirmacao: o Escopo do Pedido como o usuário confirmou na tela.
+    O tipo de cada requisito NÃO vem daqui: é sempre o do segmento de origem."""
+    titulo: str = Field(min_length=1, max_length=200)
+    objetivo: str = Field(min_length=1, max_length=4000)
+    requisitos: list[RequisitoEditado] = Field(min_length=1, max_length=30)
+    fora_escopo: list[Annotated[str, Field(max_length=1000)]] = Field(default_factory=list, max_length=30)
+    duvidas: list[Annotated[str, Field(max_length=1000)]] = Field(default_factory=list, max_length=30)
+    integracoes: list[Integracao] = Field(default_factory=list, max_length=20)
+    cd_usuario: Optional[int] = Field(default=None, description="session(\"CD_USUARIO\") do SOS, para auditoria (nunca o nome)")
+
+
+class RequisitoEscopo(Base):
+    n: int = Field(ge=1, description="número no Escopo do Pedido inteiro (o mesmo nos dois chamados)")
+    tipo: TipoRequisito
+    natureza: Natureza
+    segmento: int
+    descricao: str
+    criterio_aceite: str
+
+
+class GrupoChamado(Base):
+    """Um chamado a criar no SOS."""
+    tipo: TipoRequisito
+    titulo: str = Field(max_length=200, description="para DS_RESUMO; com 2 grupos, termina em (correção) ou (evolução)")
+    texto: str = Field(description="Escopo do Pedido do grupo em texto corrido, para DS_SOLICITACAO (o SOS corta em bytes)")
+    requisitos: list[RequisitoEscopo]
+
+
+class EscopoConfirmado(Base):
+    """Saída de POST /entrevistas/{id}/confirmacao. A entrevista fica PENDENTE até POST /confirmacao/chamados."""
+    id: str
+    versao_contrato: str = VERSAO_CONTRATO
+    situacao: str = Field(description="PENDENTE")
+    grupos: list[GrupoChamado] = Field(min_length=1, max_length=2, description="CORRETIVO antes de EVOLUTIVO")
+    analise_ia: bool
+    nota: int = Field(ge=0, le=100)
+    regra_documentada: Optional[RegraDocumentada] = Field(default=None, description="só quando aceita: trecho a anexar ao chamado")
+
+
+class ChamadoGerado(Base):
+    tipo: TipoRequisito
+    cd_solicitacao: int = Field(gt=0, description="TS_SOLICITACAO.CD_SOLICITACAO")
+
+
+class VinculoChamados(Base):
+    """Entrada de POST /entrevistas/{id}/confirmacao/chamados: o que o SOS gravou no Oracle."""
+    chamados: list[ChamadoGerado] = Field(min_length=1, max_length=2, description="um por grupo da confirmação")
+    cd_pacote: Optional[int] = Field(default=None, gt=0, description="TS_PACOTE.CD_PACOTE; obrigatório com 2 chamados")
+
+
+class Confirmacao(Base):
+    """Saída de POST /entrevistas/{id}/confirmacao/chamados (idempotente)."""
+    id: str
+    versao_contrato: str = VERSAO_CONTRATO
+    situacao: str = Field(description="CONFIRMADA")
+    chamados: list[ChamadoGerado]
+    cd_pacote: Optional[int] = None
+
+
+class VersaoEscopo(Base):
+    versao: int
+    origem: int = Field(description="0 = IA, 1 = usuário, 2 = Sustentação")
+    cd_usuario: Optional[int] = None
+    criado_em: str
+    conteudo: dict
+
+
+class EscopoChamado(Base):
+    """Saída de GET /solicitacoes/{cd}/escopo."""
+    cd_solicitacao: int
+    entrevista_id: str
+    tipo: TipoRequisito
+    cd_pacote: Optional[int] = None
+    versoes: list[VersaoEscopo]
+
+
+class EntrevistaPendente(Base):
+    """Item de GET /confirmacoes/pendentes: confirmação iniciada e não concluída (para reconciliar com o Oracle)."""
+    id: str
+    cd_sistema: Optional[int] = None
+    sigla: str
+    atualizado_em: str
+    grupos: list[TipoRequisito]

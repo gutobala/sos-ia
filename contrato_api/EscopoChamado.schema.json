@@ -1,0 +1,101 @@
+{
+  "$defs": {
+    "TipoRequisito": {
+      "description": "Define o desmembramento: um chamado por tipo ao confirmar.",
+      "enum": [
+        "CORRETIVO",
+        "EVOLUTIVO"
+      ],
+      "title": "TipoRequisito",
+      "type": "string"
+    },
+    "VersaoEscopo": {
+      "additionalProperties": false,
+      "properties": {
+        "versao": {
+          "title": "Versao",
+          "type": "integer"
+        },
+        "origem": {
+          "description": "0 = IA, 1 = usuário, 2 = Sustentação",
+          "title": "Origem",
+          "type": "integer"
+        },
+        "cd_usuario": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cd Usuario"
+        },
+        "criado_em": {
+          "title": "Criado Em",
+          "type": "string"
+        },
+        "conteudo": {
+          "additionalProperties": true,
+          "title": "Conteudo",
+          "type": "object"
+        }
+      },
+      "required": [
+        "versao",
+        "origem",
+        "criado_em",
+        "conteudo"
+      ],
+      "title": "VersaoEscopo",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Saída de GET /solicitacoes/{cd}/escopo.",
+  "properties": {
+    "cd_solicitacao": {
+      "title": "Cd Solicitacao",
+      "type": "integer"
+    },
+    "entrevista_id": {
+      "title": "Entrevista Id",
+      "type": "string"
+    },
+    "tipo": {
+      "$ref": "#/$defs/TipoRequisito"
+    },
+    "cd_pacote": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cd Pacote"
+    },
+    "versoes": {
+      "items": {
+        "$ref": "#/$defs/VersaoEscopo"
+      },
+      "title": "Versoes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "cd_solicitacao",
+    "entrevista_id",
+    "tipo",
+    "versoes"
+  ],
+  "title": "EscopoChamado",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/EscopoChamado.schema.json",
+  "x-versao-contrato": "1.2.0"
+}
