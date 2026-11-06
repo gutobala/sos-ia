@@ -42,6 +42,18 @@ prestamista 2023/0110. O sistema bloqueia a emissão do boleto e não gera nada.
   Isso reforça medir com repetições, e a questão RN13 × RN239 do item 2.2 deixa de ser hipotética. A orientação da RN239 também
   ficou genérica ("em alguns tipos de baixa"), sem explicar a ligação com o relato.
 
+**As duas regras candidatas são plausíveis, e o relato não decide entre elas:**
+
+| | RN13 | RN239 |
+|---|---|---|
+| Quando bloqueia | alienação com cadastro de inscrição no SERASA (exceto situações 3, 7 e 17, em atraso) | tipo de baixa 50, 01, 02, 03 ou 09 (amortização, isenções, quitação) e `fc_verifica_bloqueio_alienacao` devolve S |
+| Onde | **Portal da Terracap**, emissão pelo próprio prestamista | tela de emissão do sistema (usuário interno) |
+| O que o usuário vê | não consegue emitir | **mensagem de bloqueio** |
+
+O que separa as duas, e o usuário não disse: **onde** tentou emitir (Portal × GAI), **que tipo de boleto** (quitação,
+amortização, isenção…) e **se apareceu mensagem**. Quem abre chamado no SOS é funcionário, o que favorece a RN239; o pedido do SOS
+supôs a RN13. O gabarito deve aceitar as duas para este relato, ou rotulá-lo como "ambíguo" e medir à parte.
+
 Controle negativo (deve continuar **sem** regra): "O sistema nao deixa alterar o contrato de alienacao depois que a primeira
 parcela foi paga…" — não existe RN sobre isso no GAI.
 
@@ -53,7 +65,20 @@ parcela foi paga…" — não existe RN sobre isso no GAI.
    mudar, o pedido é uma melhoria." Manter a saída: um único trecho (o mais específico) ou 0.
 2. **Escolha entre regras concorrentes.** Aqui há duas regras de bloqueio plausíveis (RN13 e RN239). Ver qual a variante aponta e
    se a orientação faz sentido para o usuário. Apontar a RN239 também pode ser aceitável; registrar.
-3. **Só se o prompt não bastar:** busca (BM25 para regras/mensagens no corretivo, ou `LIMIT` maior só para esse tipo). Neste caso
+3. **Variante B — pergunta que separa as regras (a testar contra a variante 1).** Em vez de o LLM escolher uma regra no escuro:
+   - na 1ª rodada, o LLM devolve **até 2 trechos candidatos** e, quando houver ambiguidade, **uma pergunta discriminante** feita
+     a partir do que as regras exigem (ex.: "Você tentou emitir pelo Portal ou pelo GAI? Que tipo de boleto era — quitação,
+     amortização, isenção…? Apareceu alguma mensagem? Copie o texto, se houver."). Com uma candidata só e a ligação evidente,
+     aponta direto, como na variante 1;
+   - os candidatos ficam no estado (`est["regras_candidatas"]`), **sem** aparecer para o usuário;
+   - na rodada seguinte, com a resposta, o LLM aponta **um** trecho da lista de candidatos (ou 0), com orientação específica
+     ao caso do usuário ("Como a emissão era de quitação e apareceu a mensagem de bloqueio, isto segue a RN239…");
+   - a regra fixa continua valendo: o trecho final tem de estar entre os candidatos, que têm de ter vindo do RAG.
+   Custos da variante B: gasta uma das 5 perguntas da 1ª rodada e adia a regra para a 2ª rodada (se a entrevista fechar na 1ª,
+   a regra não aparece: medir quantas vezes isso acontece). No produto exigiria mudar o `SCHEMA_ENTREVISTA`, o `aplica()` e o
+   prompt, mas **não** o contrato da API: a pergunta discriminante é uma `Pergunta` comum (por exemplo com `slot="gatilho"`,
+   que já não preenche slot), e a tela do SOS continua recebendo no máximo uma `regra_documentada`.
+4. **Só se o prompt não bastar:** busca (BM25 para regras/mensagens no corretivo, ou `LIMIT` maior só para esse tipo). Neste caso
    a RN13 já veio, então a busca deve ficar para depois.
 
 Não mudar o que é determinístico: só trecho vindo do RAG, só tipos `regras_de_negocio` / `mensagens` / `caso_de_uso`, só no
@@ -80,11 +105,19 @@ Não mudar o que é determinístico: só trecho vindo do RAG, só tipos `regras_
 | Orientação | as apontadas têm orientação condicional que explica a ligação | todas |
 | Casos do SOS | boleto 2023/0110 → RN13 (ou RN239, se aceitável); parcela paga → nenhuma | os dois, na maioria das 3 repetições |
 | Estabilidade | relatos em que as 3 repetições não concordam | relatar; menor que a do prompt atual |
+| Só na variante B | relatos em que a pergunta discriminante foi feita; regras perdidas porque a entrevista fechou antes; perguntas inúteis (feitas sem ambiguidade real) | relatar |
 
-Custo esperado: ~US$ 0,005 por chamada com o `gpt-5.4-mini`; 20 relatos × 3 repetições × 2 prompts ≈ US$ 0,60.
+**Para a variante B, o gabarito precisa da "situação real" de cada relato**, escondida do motor: por exemplo, para o boleto
+2023/0110, uma versão "pelo GAI, quitação, apareceu a mensagem de bloqueio" (→ RN239) e outra "pelo Portal, prestamista inscrito
+no SERASA" (→ RN13). A resposta à pergunta discriminante sai dessa situação: escrita à mão, ou por um LLM que faz o papel do
+usuário e só conhece a situação real (nunca a regra). Assim dá para medir se a pergunta leva à regra certa nos dois casos.
+
+Custo esperado: ~US$ 0,005 por chamada com o `gpt-5.4-mini`; 20 relatos × 3 repetições × 3 prompts (atual, variante 1,
+variante B com 2 rodadas) ≈ US$ 1,20.
 
 ## 5. O que trazer de volta (só se passar)
-- O novo bloco do prompt (`prompts/entrevista_v1.md`, ou um `entrevista_v2.md` se a mudança for grande).
+- O novo bloco do prompt (`prompts/entrevista_v1.md`, ou um `entrevista_v2.md` se a mudança for grande). Se a vencedora for a
+  variante B, também as mudanças em `SCHEMA_ENTREVISTA` e `aplica()` (`nucleo/entrevista/motor.py`), com os testes do LLM falso.
 - O resultado em `dados/` (como `dados/regra_documentada_gabarito.txt`): prompt atual × novo, as quatro métricas, a lista dos
   relatos com acerto/erro e o custo. **Sem dado pessoal**: relatos reescritos e anonimizados.
 - O script de medição em `migracao/` (por exemplo `migracao/mede_regra_documentada.py`), para repetir no produto.
