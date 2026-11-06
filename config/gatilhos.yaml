@@ -1,0 +1,36 @@
+# Gatilhos ocultos: coisas que o usuário cita de passagem e que costumam mudar muito o tamanho do trabalho.
+# Quando o padrão aparece no relato (ou nas respostas), o motor avisa o LLM, que faz UMA pergunta curta sobre o gatilho
+# (slot "gatilho"). A resposta vai para as dúvidas/integrações do contrato. Editável sem mexer no código (tela de apoio na Fase 2).
+#   codigo     identificador estável (vai no evento da entrevista)
+#   padrao     expressão regular, sem diferenciar maiúsculas; \b = limite de palavra
+#   pergunta   sugestão de pergunta (o LLM pode adaptar ao contexto)
+
+- codigo: integracao
+  descricao: dados que vêm de outro sistema ou vão para ele
+  padrao: '\b(benner|sei|receita( federal)?|serpro|banco do brasil|brb|caixa|siafi|siggo|cartório|cartorio|gdf|integra[cç][aã]o|webservice|api)\b'
+  pergunta: 'Você citou outro sistema. As informações serão só consultadas nele ou também precisam ser gravadas ou enviadas para ele?'
+
+- codigo: guardar_exibir
+  descricao: campo novo que só aparece na tela × que precisa ser gravado e usado em outros lugares
+  padrao: '\b(novos? campos?|(incluir|acrescentar|criar|adicionar) (o |um |os )?campos?|novas? colunas?|nova informa[cç][aã]o)\b'
+  pergunta: 'Essa informação só precisa aparecer na tela, ou também precisa ser gravada e usada em outros lugares (relatórios, cálculos, outros sistemas)?'
+
+- codigo: rotina
+  descricao: processamento automático, agendado ou em lote
+  padrao: '\b(autom[aá]tic[oa]|agendad[oa]|rotina|diariamente|mensalmente|todo dia|todo m[eê]s|em lote|job|batch)\b'
+  pergunta: 'Isso deve acontecer automaticamente (em um horário ou período definido) ou quando o usuário clicar em algo?'
+
+- codigo: arquivo
+  descricao: geração, envio ou leitura de arquivo, planilha ou e-mail
+  padrao: '\b(arquivo|planilha|excel|csv|txt|pdf|e-?mail|enviar|remessa|retorno|importar|exportar)\b'
+  pergunta: 'O sistema vai gerar, enviar ou ler algum arquivo ou e-mail? Em que formato e para quem?'
+
+- codigo: layout_legal
+  descricao: formato definido por norma ou órgão externo
+  padrao: '\b(layout|leiaute|portaria|instru[cç][aã]o normativa|resolu[cç][aã]o|decreto|lei n|in n|tcdf|cgdf|bacen)\b'
+  pergunta: 'Existe uma norma ou um layout definido por outro órgão que precisa ser seguido? Se sim, anexe ou cite o documento.'
+
+- codigo: conforme_anexo
+  descricao: o pedido depende de um anexo
+  padrao: '\b(conforme (o )?anexo|em anexo|segue anexo|anexad[oa]|ver anexo|planilha anexa)\b'
+  pergunta: 'Você citou um anexo. Resuma aqui o que nele é o pedido (o que muda e onde), para não depender só do arquivo.'

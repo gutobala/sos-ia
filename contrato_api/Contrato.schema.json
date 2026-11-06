@@ -1,0 +1,352 @@
+{
+  "$defs": {
+    "DecisaoRegra": {
+      "description": "Escolha do usuário diante da regra documentada (o segmento fica CORRETIVO até ele decidir).",
+      "enum": [
+        "ACEITA",
+        "RECUSADA"
+      ],
+      "title": "DecisaoRegra",
+      "type": "string"
+    },
+    "Integracao": {
+      "additionalProperties": false,
+      "properties": {
+        "sistema": {
+          "title": "Sistema",
+          "type": "string"
+        },
+        "sentido": {
+          "pattern": "^(BUSCA|GRAVA|AMBOS)$",
+          "title": "Sentido",
+          "type": "string"
+        },
+        "descricao": {
+          "title": "Descricao",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sistema",
+        "sentido",
+        "descricao"
+      ],
+      "title": "Integracao",
+      "type": "object"
+    },
+    "RegraDocumentada": {
+      "additionalProperties": false,
+      "properties": {
+        "pagina": {
+          "title": "Pagina",
+          "type": "string"
+        },
+        "secao": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Secao"
+        },
+        "trecho": {
+          "title": "Trecho",
+          "type": "string"
+        },
+        "similaridade": {
+          "title": "Similaridade",
+          "type": "number"
+        },
+        "orientacao": {
+          "description": "texto para o usuário: o comportamento parece seguir esta regra; se quiser mudá-la, é evolutivo",
+          "title": "Orientacao",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pagina",
+        "trecho",
+        "similaridade",
+        "orientacao"
+      ],
+      "title": "RegraDocumentada",
+      "type": "object"
+    },
+    "RequisitoContrato": {
+      "additionalProperties": false,
+      "properties": {
+        "n": {
+          "minimum": 1,
+          "title": "N",
+          "type": "integer"
+        },
+        "tipo": {
+          "$ref": "#/$defs/TipoRequisito"
+        },
+        "segmento": {
+          "title": "Segmento",
+          "type": "integer"
+        },
+        "descricao": {
+          "title": "Descricao",
+          "type": "string"
+        },
+        "criterio_aceite": {
+          "title": "Criterio Aceite",
+          "type": "string"
+        }
+      },
+      "required": [
+        "n",
+        "tipo",
+        "segmento",
+        "descricao",
+        "criterio_aceite"
+      ],
+      "title": "RequisitoContrato",
+      "type": "object"
+    },
+    "Segmento": {
+      "additionalProperties": false,
+      "properties": {
+        "n": {
+          "minimum": 1,
+          "title": "N",
+          "type": "integer"
+        },
+        "tipo": {
+          "$ref": "#/$defs/TipoSegmento"
+        },
+        "resumo": {
+          "title": "Resumo",
+          "type": "string"
+        },
+        "slots": {
+          "items": {
+            "$ref": "#/$defs/Slot"
+          },
+          "title": "Slots",
+          "type": "array"
+        }
+      },
+      "required": [
+        "n",
+        "tipo",
+        "resumo",
+        "slots"
+      ],
+      "title": "Segmento",
+      "type": "object"
+    },
+    "Slot": {
+      "additionalProperties": false,
+      "properties": {
+        "codigo": {
+          "title": "Codigo",
+          "type": "string"
+        },
+        "rotulo": {
+          "title": "Rotulo",
+          "type": "string"
+        },
+        "obrigatorio": {
+          "title": "Obrigatorio",
+          "type": "boolean"
+        },
+        "valor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valor"
+        },
+        "preenchido": {
+          "description": "valor presente e com o mínimo exigido pelo roteiro (validação determinística)",
+          "title": "Preenchido",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "codigo",
+        "rotulo",
+        "obrigatorio",
+        "preenchido"
+      ],
+      "title": "Slot",
+      "type": "object"
+    },
+    "SlotFaltando": {
+      "additionalProperties": false,
+      "properties": {
+        "segmento": {
+          "title": "Segmento",
+          "type": "integer"
+        },
+        "slot": {
+          "title": "Slot",
+          "type": "string"
+        },
+        "rotulo": {
+          "title": "Rotulo",
+          "type": "string"
+        }
+      },
+      "required": [
+        "segmento",
+        "slot",
+        "rotulo"
+      ],
+      "title": "SlotFaltando",
+      "type": "object"
+    },
+    "TipoRequisito": {
+      "description": "Define o desmembramento: um chamado por tipo ao confirmar.",
+      "enum": [
+        "CORRETIVO",
+        "EVOLUTIVO"
+      ],
+      "title": "TipoRequisito",
+      "type": "string"
+    },
+    "TipoSegmento": {
+      "enum": [
+        "CORRETIVO",
+        "EVOLUTIVO_EXISTENTE",
+        "EVOLUTIVO_NOVO"
+      ],
+      "title": "TipoSegmento",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Resposta de POST /entrevistas/{id}/contrato. O usuário edita no SOS; confirmarAbertura.asp revalida os slots.",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "versao_contrato": {
+      "default": "1.1.0",
+      "title": "Versao Contrato",
+      "type": "string"
+    },
+    "titulo": {
+      "maxLength": 200,
+      "title": "Titulo",
+      "type": "string"
+    },
+    "objetivo": {
+      "title": "Objetivo",
+      "type": "string"
+    },
+    "requisitos": {
+      "items": {
+        "$ref": "#/$defs/RequisitoContrato"
+      },
+      "title": "Requisitos",
+      "type": "array"
+    },
+    "fora_escopo": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Fora Escopo",
+      "type": "array"
+    },
+    "duvidas": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Duvidas",
+      "type": "array"
+    },
+    "integracoes": {
+      "items": {
+        "$ref": "#/$defs/Integracao"
+      },
+      "title": "Integracoes",
+      "type": "array"
+    },
+    "segmentos": {
+      "items": {
+        "$ref": "#/$defs/Segmento"
+      },
+      "title": "Segmentos",
+      "type": "array"
+    },
+    "regra_documentada": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RegraDocumentada"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "trecho a anexar ao chamado quando aceita"
+    },
+    "decisao_regra": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DecisaoRegra"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "nota": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Nota",
+      "type": "integer"
+    },
+    "faltando": {
+      "description": "inclui o slot 'decisao_regra' enquanto a regra documentada estiver sem decisão",
+      "items": {
+        "$ref": "#/$defs/SlotFaltando"
+      },
+      "title": "Faltando",
+      "type": "array"
+    },
+    "pode_confirmar": {
+      "description": "false enquanto houver slot obrigatório faltando",
+      "title": "Pode Confirmar",
+      "type": "boolean"
+    },
+    "analise_ia": {
+      "title": "Analise Ia",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "titulo",
+    "objetivo",
+    "requisitos",
+    "fora_escopo",
+    "duvidas",
+    "integracoes",
+    "segmentos",
+    "nota",
+    "faltando",
+    "pode_confirmar",
+    "analise_ia"
+  ],
+  "title": "Contrato",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/Contrato.schema.json",
+  "x-versao-contrato": "1.1.0"
+}

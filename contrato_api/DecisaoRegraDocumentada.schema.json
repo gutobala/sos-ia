@@ -1,0 +1,33 @@
+{
+  "additionalProperties": false,
+  "description": "Entrada de POST /entrevistas/{id}/regra.",
+  "properties": {
+    "aceita": {
+      "description": "true = o comportamento segue a regra e o usuário quer mudá-la (vira evolutivo); false = o usuário mantém que é defeito",
+      "title": "Aceita",
+      "type": "boolean"
+    },
+    "comentario": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "por que discorda, ou o que quer mudar na regra",
+      "title": "Comentario"
+    }
+  },
+  "required": [
+    "aceita"
+  ],
+  "title": "DecisaoRegraDocumentada",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/DecisaoRegraDocumentada.schema.json",
+  "x-versao-contrato": "1.1.0"
+}

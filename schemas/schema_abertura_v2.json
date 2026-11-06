@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["itens", "natureza_chamado", "assunto_sugerido"],
+  "properties": {
+    "itens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["modulo", "tela", "acao", "natureza", "texto", "pergunta"],
+        "properties": {
+          "modulo": {"type": "string"},
+          "tela": {"type": "string"},
+          "acao": {"type": "string", "enum": ["Incluir", "Alterar", "Excluir", "Consultar", "Corrigir", "Relatório", "Exportar", "Importar", "Integrar"]},
+          "natureza": {"type": "string", "enum": ["corretivo", "evolutivo"]},
+          "texto": {"type": "string"},
+          "pergunta": {"type": "string"}
+        }
+      }
+    },
+    "natureza_chamado": {"type": "string", "enum": ["corretivo", "evolutivo", "misto"]},
+    "assunto_sugerido": {"type": "string"}
+  }
+}

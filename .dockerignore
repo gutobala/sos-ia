@@ -1,0 +1,9 @@
+.venv
+dados
+.git
+.pytest_cache
+**/__pycache__
+.env
+tests
+migracao
+!migracao/sql

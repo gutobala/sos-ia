@@ -1,0 +1,85 @@
+{
+  "$defs": {
+    "Imagem": {
+      "additionalProperties": false,
+      "properties": {
+        "nome": {
+          "maxLength": 200,
+          "title": "Nome",
+          "type": "string"
+        },
+        "mime": {
+          "pattern": "^image/(png|jpeg|gif|bmp|webp)$",
+          "title": "Mime",
+          "type": "string"
+        },
+        "base64": {
+          "description": "conteúdo da imagem em base64 (sem o prefixo data:)",
+          "maxLength": 7000000,
+          "title": "Base64",
+          "type": "string"
+        }
+      },
+      "required": [
+        "nome",
+        "mime",
+        "base64"
+      ],
+      "title": "Imagem",
+      "type": "object"
+    },
+    "Intencao": {
+      "description": "Opção do cardápio escolhida pelo usuário (a garantia não passa pela IA).",
+      "enum": [
+        "PAROU_DE_FUNCIONAR",
+        "MUDAR_EXISTENTE",
+        "ALGO_NOVO"
+      ],
+      "title": "Intencao",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "cd_sistema": {
+      "description": "CD_SISTEMA do SOS",
+      "title": "Cd Sistema",
+      "type": "integer"
+    },
+    "sigla": {
+      "description": "sigla do sistema (ex.: GAI)",
+      "maxLength": 40,
+      "title": "Sigla",
+      "type": "string"
+    },
+    "intencao": {
+      "$ref": "#/$defs/Intencao"
+    },
+    "relato": {
+      "description": "relato livre do usuário",
+      "maxLength": 20000,
+      "minLength": 10,
+      "title": "Relato",
+      "type": "string"
+    },
+    "imagens": {
+      "items": {
+        "$ref": "#/$defs/Imagem"
+      },
+      "maxItems": 5,
+      "title": "Imagens",
+      "type": "array"
+    }
+  },
+  "required": [
+    "cd_sistema",
+    "sigla",
+    "intencao",
+    "relato"
+  ],
+  "title": "NovaEntrevista",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/NovaEntrevista.schema.json",
+  "x-versao-contrato": "1.1.0"
+}

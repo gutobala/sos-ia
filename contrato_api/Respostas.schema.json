@@ -1,0 +1,45 @@
+{
+  "$defs": {
+    "Resposta": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "id da pergunta respondida",
+          "title": "Id",
+          "type": "string"
+        },
+        "texto": {
+          "maxLength": 5000,
+          "title": "Texto",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "texto"
+      ],
+      "title": "Resposta",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "respostas": {
+      "items": {
+        "$ref": "#/$defs/Resposta"
+      },
+      "maxItems": 10,
+      "minItems": 1,
+      "title": "Respostas",
+      "type": "array"
+    }
+  },
+  "required": [
+    "respostas"
+  ],
+  "title": "Respostas",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/Respostas.schema.json",
+  "x-versao-contrato": "1.1.0"
+}

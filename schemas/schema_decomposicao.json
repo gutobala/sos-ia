@@ -1,0 +1,45 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resumo", "requisitos"],
+  "properties": {
+    "resumo": {"type": "string"},
+    "requisitos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "modulo", "titulo", "descricao", "trecho_origem", "problema_relatado",
+                     "comportamento_solicitado", "tipo", "natureza_manutencao_candidata", "escopo",
+                     "grupo_recuperacao", "requisitos_relacionados", "informacoes_pendentes", "rag"],
+        "properties": {
+          "id": {"type": "string"},
+          "modulo": {"type": ["string", "null"]},
+          "titulo": {"type": "string"},
+          "descricao": {"type": "string"},
+          "trecho_origem": {"type": "string"},
+          "problema_relatado": {"type": ["string", "null"]},
+          "comportamento_solicitado": {"type": "string"},
+          "tipo": {"type": "string", "enum": ["funcional", "nao_funcional", "restricao", "regra_de_comportamento"]},
+          "natureza_manutencao_candidata": {"type": "string", "enum": ["criacao", "alteracao", "correcao", "indeterminado"]},
+          "escopo": {"type": "string", "enum": ["especifico", "transversal"]},
+          "grupo_recuperacao": {"type": "string"},
+          "requisitos_relacionados": {"type": "array", "items": {"type": "string"}},
+          "informacoes_pendentes": {"type": "array", "items": {"type": "string"}},
+          "rag": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["consulta_principal", "consultas_alternativas", "termos_exatos", "tipos_documento", "perguntas_documentais"],
+            "properties": {
+              "consulta_principal": {"type": "string"},
+              "consultas_alternativas": {"type": "array", "items": {"type": "string"}},
+              "termos_exatos": {"type": "array", "items": {"type": "string"}},
+              "tipos_documento": {"type": "array", "items": {"type": "string", "enum": ["caso_de_uso", "user_story", "regras_de_negocio", "mensagens", "glossario", "documento"]}},
+              "perguntas_documentais": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        }
+      }
+    }
+  }
+}

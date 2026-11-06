@@ -1,0 +1,12 @@
+fastapi==0.162.0
+uvicorn==0.54.0
+pydantic==2.14.1
+httpx==0.28.1
+psycopg[binary]==3.3.6
+pgvector==0.5.1
+openai==3.40.0
+numpy==2.5.4
+PyYAML==6.0.3
+jsonschema==4.26.0
+pytest==9.2.0
+# extras opcionais (só se SOSIA_EMB=e5 / SOSIA_PII_MODO=local com imagens): sentence-transformers, torch, easyocr

@@ -1,0 +1,1310 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "sos-ia",
+    "description": "Entrevista de abertura de chamados do SOS (Fase 1). Contrato em contrato_api/.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/saude": {
+      "get": {
+        "summary": "Saude",
+        "description": "ok=false → o SOS usa o roteiro fixo (fallback). llm=false com ok=true → o motor responde com analise_ia=false.",
+        "operationId": "saude_saude_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Saude"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entrevistas": {
+      "post": {
+        "summary": "Nova Entrevista",
+        "operationId": "nova_entrevista_entrevistas_post",
+        "parameters": [
+          {
+            "name": "x-sosia-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Sosia-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovaEntrevista"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstadoEntrevista"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "503": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entrevistas/{eid}": {
+      "get": {
+        "summary": "Obter Entrevista",
+        "operationId": "obter_entrevista_entrevistas__eid__get",
+        "parameters": [
+          {
+            "name": "eid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Eid"
+            }
+          },
+          {
+            "name": "x-sosia-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Sosia-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstadoEntrevista"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "503": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entrevistas/{eid}/respostas": {
+      "post": {
+        "summary": "Responder",
+        "operationId": "responder_entrevistas__eid__respostas_post",
+        "parameters": [
+          {
+            "name": "eid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Eid"
+            }
+          },
+          {
+            "name": "x-sosia-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Sosia-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Respostas"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstadoEntrevista"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "503": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entrevistas/{eid}/regra": {
+      "post": {
+        "summary": "Decidir Regra",
+        "description": "O usuário decide se o comportamento segue a regra documentada (aceita → evolutivo) ou se é defeito (recusa → corretivo).\n409 se a entrevista não tem regra documentada ou já foi decidida.",
+        "operationId": "decidir_regra_entrevistas__eid__regra_post",
+        "parameters": [
+          {
+            "name": "eid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Eid"
+            }
+          },
+          {
+            "name": "x-sosia-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Sosia-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisaoRegraDocumentada"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstadoEntrevista"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "503": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entrevistas/{eid}/contrato": {
+      "post": {
+        "summary": "Contrato",
+        "operationId": "contrato_entrevistas__eid__contrato_post",
+        "parameters": [
+          {
+            "name": "eid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Eid"
+            }
+          },
+          {
+            "name": "x-sosia-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Sosia-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Contrato"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "503": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CandidatoFuncionalidade": {
+        "properties": {
+          "nome": {
+            "type": "string",
+            "title": "Nome"
+          },
+          "tipo_ifpug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Ifpug"
+          },
+          "pagina_wiki": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pagina Wiki"
+          },
+          "trecho": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trecho"
+          },
+          "similaridade": {
+            "type": "number",
+            "title": "Similaridade"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "nome",
+          "similaridade"
+        ],
+        "title": "CandidatoFuncionalidade"
+      },
+      "Contrato": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "versao_contrato": {
+            "type": "string",
+            "title": "Versao Contrato",
+            "default": "1.1.0"
+          },
+          "titulo": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Titulo"
+          },
+          "objetivo": {
+            "type": "string",
+            "title": "Objetivo"
+          },
+          "requisitos": {
+            "items": {
+              "$ref": "#/components/schemas/RequisitoContrato"
+            },
+            "type": "array",
+            "title": "Requisitos"
+          },
+          "fora_escopo": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Fora Escopo"
+          },
+          "duvidas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Duvidas"
+          },
+          "integracoes": {
+            "items": {
+              "$ref": "#/components/schemas/Integracao"
+            },
+            "type": "array",
+            "title": "Integracoes"
+          },
+          "segmentos": {
+            "items": {
+              "$ref": "#/components/schemas/Segmento"
+            },
+            "type": "array",
+            "title": "Segmentos"
+          },
+          "regra_documentada": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegraDocumentada"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "trecho a anexar ao chamado quando aceita"
+          },
+          "decisao_regra": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DecisaoRegra"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nota": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Nota"
+          },
+          "faltando": {
+            "items": {
+              "$ref": "#/components/schemas/SlotFaltando"
+            },
+            "type": "array",
+            "title": "Faltando",
+            "description": "inclui o slot 'decisao_regra' enquanto a regra documentada estiver sem decisão"
+          },
+          "pode_confirmar": {
+            "type": "boolean",
+            "title": "Pode Confirmar",
+            "description": "false enquanto houver slot obrigatório faltando"
+          },
+          "analise_ia": {
+            "type": "boolean",
+            "title": "Analise Ia"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "titulo",
+          "objetivo",
+          "requisitos",
+          "fora_escopo",
+          "duvidas",
+          "integracoes",
+          "segmentos",
+          "nota",
+          "faltando",
+          "pode_confirmar",
+          "analise_ia"
+        ],
+        "title": "Contrato",
+        "description": "Resposta de POST /entrevistas/{id}/contrato. O usuário edita no SOS; confirmarAbertura.asp revalida os slots."
+      },
+      "DecisaoRegra": {
+        "type": "string",
+        "enum": [
+          "ACEITA",
+          "RECUSADA"
+        ],
+        "title": "DecisaoRegra",
+        "description": "Escolha do usuário diante da regra documentada (o segmento fica CORRETIVO até ele decidir)."
+      },
+      "DecisaoRegraDocumentada": {
+        "properties": {
+          "aceita": {
+            "type": "boolean",
+            "title": "Aceita",
+            "description": "true = o comportamento segue a regra e o usuário quer mudá-la (vira evolutivo); false = o usuário mantém que é defeito"
+          },
+          "comentario": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comentario",
+            "description": "por que discorda, ou o que quer mudar na regra"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "aceita"
+        ],
+        "title": "DecisaoRegraDocumentada",
+        "description": "Entrada de POST /entrevistas/{id}/regra."
+      },
+      "Erro": {
+        "properties": {
+          "erro": {
+            "type": "string",
+            "title": "Erro"
+          },
+          "detalhe": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detalhe"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "erro"
+        ],
+        "title": "Erro"
+      },
+      "EstadoEntrevista": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "versao_contrato": {
+            "type": "string",
+            "title": "Versao Contrato",
+            "default": "1.1.0"
+          },
+          "rodada": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Rodada",
+            "description": "rodada atual de perguntas (máx. 2; 3 = encerrada)"
+          },
+          "pronto": {
+            "type": "boolean",
+            "title": "Pronto",
+            "description": "true: não há mais perguntas; chamar POST /contrato"
+          },
+          "segmentos": {
+            "items": {
+              "$ref": "#/components/schemas/Segmento"
+            },
+            "type": "array",
+            "title": "Segmentos"
+          },
+          "candidatos_funcionalidade": {
+            "items": {
+              "$ref": "#/components/schemas/CandidatoFuncionalidade"
+            },
+            "type": "array",
+            "title": "Candidatos Funcionalidade"
+          },
+          "regra_documentada": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegraDocumentada"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decisao_regra": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DecisaoRegra"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null com regra_documentada presente = o SOS deve perguntar ao usuário e chamar POST /entrevistas/{id}/regra"
+          },
+          "perguntas": {
+            "items": {
+              "$ref": "#/components/schemas/Pergunta"
+            },
+            "type": "array",
+            "title": "Perguntas"
+          },
+          "nota": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Nota",
+            "description": "medidor de qualidade do pedido"
+          },
+          "dicas_medidor": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dicas Medidor"
+          },
+          "analise_ia": {
+            "type": "boolean",
+            "title": "Analise Ia",
+            "description": "false quando a resposta veio do roteiro fixo (sem IA)"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "rodada",
+          "pronto",
+          "segmentos",
+          "nota",
+          "analise_ia"
+        ],
+        "title": "EstadoEntrevista",
+        "description": "Resposta de POST /entrevistas, POST /entrevistas/{id}/respostas e GET /entrevistas/{id}."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Imagem": {
+        "properties": {
+          "nome": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Nome"
+          },
+          "mime": {
+            "type": "string",
+            "pattern": "^image/(png|jpeg|gif|bmp|webp)$",
+            "title": "Mime"
+          },
+          "base64": {
+            "type": "string",
+            "maxLength": 7000000,
+            "title": "Base64",
+            "description": "conteúdo da imagem em base64 (sem o prefixo data:)"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "nome",
+          "mime",
+          "base64"
+        ],
+        "title": "Imagem"
+      },
+      "Integracao": {
+        "properties": {
+          "sistema": {
+            "type": "string",
+            "title": "Sistema"
+          },
+          "sentido": {
+            "type": "string",
+            "pattern": "^(BUSCA|GRAVA|AMBOS)$",
+            "title": "Sentido"
+          },
+          "descricao": {
+            "type": "string",
+            "title": "Descricao"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sistema",
+          "sentido",
+          "descricao"
+        ],
+        "title": "Integracao"
+      },
+      "Intencao": {
+        "type": "string",
+        "enum": [
+          "PAROU_DE_FUNCIONAR",
+          "MUDAR_EXISTENTE",
+          "ALGO_NOVO"
+        ],
+        "title": "Intencao",
+        "description": "Opção do cardápio escolhida pelo usuário (a garantia não passa pela IA)."
+      },
+      "NovaEntrevista": {
+        "properties": {
+          "cd_sistema": {
+            "type": "integer",
+            "title": "Cd Sistema",
+            "description": "CD_SISTEMA do SOS"
+          },
+          "sigla": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Sigla",
+            "description": "sigla do sistema (ex.: GAI)"
+          },
+          "intencao": {
+            "$ref": "#/components/schemas/Intencao"
+          },
+          "relato": {
+            "type": "string",
+            "maxLength": 20000,
+            "minLength": 10,
+            "title": "Relato",
+            "description": "relato livre do usuário"
+          },
+          "imagens": {
+            "items": {
+              "$ref": "#/components/schemas/Imagem"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Imagens"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "cd_sistema",
+          "sigla",
+          "intencao",
+          "relato"
+        ],
+        "title": "NovaEntrevista"
+      },
+      "Pergunta": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "segmento": {
+            "type": "integer",
+            "title": "Segmento"
+          },
+          "slot": {
+            "type": "string",
+            "title": "Slot",
+            "description": "código do slot que a resposta preenche ('gatilho' quando é pergunta de complexidade oculta)"
+          },
+          "texto": {
+            "type": "string",
+            "title": "Texto"
+          },
+          "dica": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dica"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "segmento",
+          "slot",
+          "texto"
+        ],
+        "title": "Pergunta"
+      },
+      "RegraDocumentada": {
+        "properties": {
+          "pagina": {
+            "type": "string",
+            "title": "Pagina"
+          },
+          "secao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secao"
+          },
+          "trecho": {
+            "type": "string",
+            "title": "Trecho"
+          },
+          "similaridade": {
+            "type": "number",
+            "title": "Similaridade"
+          },
+          "orientacao": {
+            "type": "string",
+            "title": "Orientacao",
+            "description": "texto para o usuário: o comportamento parece seguir esta regra; se quiser mudá-la, é evolutivo"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pagina",
+          "trecho",
+          "similaridade",
+          "orientacao"
+        ],
+        "title": "RegraDocumentada"
+      },
+      "RequisitoContrato": {
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "N"
+          },
+          "tipo": {
+            "$ref": "#/components/schemas/TipoRequisito"
+          },
+          "segmento": {
+            "type": "integer",
+            "title": "Segmento"
+          },
+          "descricao": {
+            "type": "string",
+            "title": "Descricao"
+          },
+          "criterio_aceite": {
+            "type": "string",
+            "title": "Criterio Aceite"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "n",
+          "tipo",
+          "segmento",
+          "descricao",
+          "criterio_aceite"
+        ],
+        "title": "RequisitoContrato"
+      },
+      "Resposta": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "id da pergunta respondida"
+          },
+          "texto": {
+            "type": "string",
+            "maxLength": 5000,
+            "title": "Texto"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "texto"
+        ],
+        "title": "Resposta"
+      },
+      "Respostas": {
+        "properties": {
+          "respostas": {
+            "items": {
+              "$ref": "#/components/schemas/Resposta"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Respostas"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "respostas"
+        ],
+        "title": "Respostas"
+      },
+      "Saude": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "versao": {
+            "type": "string",
+            "title": "Versao"
+          },
+          "versao_contrato": {
+            "type": "string",
+            "title": "Versao Contrato",
+            "default": "1.1.0"
+          },
+          "mock": {
+            "type": "boolean",
+            "title": "Mock"
+          },
+          "llm": {
+            "type": "boolean",
+            "title": "Llm"
+          },
+          "banco": {
+            "type": "boolean",
+            "title": "Banco"
+          },
+          "embeddings": {
+            "type": "string",
+            "title": "Embeddings"
+          },
+          "modo_pii": {
+            "type": "string",
+            "title": "Modo Pii"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ok",
+          "versao",
+          "mock",
+          "llm",
+          "banco",
+          "embeddings",
+          "modo_pii"
+        ],
+        "title": "Saude"
+      },
+      "Segmento": {
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "N"
+          },
+          "tipo": {
+            "$ref": "#/components/schemas/TipoSegmento"
+          },
+          "resumo": {
+            "type": "string",
+            "title": "Resumo"
+          },
+          "slots": {
+            "items": {
+              "$ref": "#/components/schemas/Slot"
+            },
+            "type": "array",
+            "title": "Slots"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "n",
+          "tipo",
+          "resumo",
+          "slots"
+        ],
+        "title": "Segmento"
+      },
+      "Slot": {
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "title": "Codigo"
+          },
+          "rotulo": {
+            "type": "string",
+            "title": "Rotulo"
+          },
+          "obrigatorio": {
+            "type": "boolean",
+            "title": "Obrigatorio"
+          },
+          "valor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valor"
+          },
+          "preenchido": {
+            "type": "boolean",
+            "title": "Preenchido",
+            "description": "valor presente e com o mínimo exigido pelo roteiro (validação determinística)"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "codigo",
+          "rotulo",
+          "obrigatorio",
+          "preenchido"
+        ],
+        "title": "Slot"
+      },
+      "SlotFaltando": {
+        "properties": {
+          "segmento": {
+            "type": "integer",
+            "title": "Segmento"
+          },
+          "slot": {
+            "type": "string",
+            "title": "Slot"
+          },
+          "rotulo": {
+            "type": "string",
+            "title": "Rotulo"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "segmento",
+          "slot",
+          "rotulo"
+        ],
+        "title": "SlotFaltando"
+      },
+      "TipoRequisito": {
+        "type": "string",
+        "enum": [
+          "CORRETIVO",
+          "EVOLUTIVO"
+        ],
+        "title": "TipoRequisito",
+        "description": "Define o desmembramento: um chamado por tipo ao confirmar."
+      },
+      "TipoSegmento": {
+        "type": "string",
+        "enum": [
+          "CORRETIVO",
+          "EVOLUTIVO_EXISTENTE",
+          "EVOLUTIVO_NOVO"
+        ],
+        "title": "TipoSegmento"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "ok": {
+      "title": "Ok",
+      "type": "boolean"
+    },
+    "versao": {
+      "title": "Versao",
+      "type": "string"
+    },
+    "versao_contrato": {
+      "default": "1.1.0",
+      "title": "Versao Contrato",
+      "type": "string"
+    },
+    "mock": {
+      "title": "Mock",
+      "type": "boolean"
+    },
+    "llm": {
+      "title": "Llm",
+      "type": "boolean"
+    },
+    "banco": {
+      "title": "Banco",
+      "type": "boolean"
+    },
+    "embeddings": {
+      "title": "Embeddings",
+      "type": "string"
+    },
+    "modo_pii": {
+      "title": "Modo Pii",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "versao",
+    "mock",
+    "llm",
+    "banco",
+    "embeddings",
+    "modo_pii"
+  ],
+  "title": "Saude",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/Saude.schema.json",
+  "x-versao-contrato": "1.1.0"
+}

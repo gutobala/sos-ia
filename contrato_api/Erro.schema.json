@@ -1,0 +1,29 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "erro": {
+      "title": "Erro",
+      "type": "string"
+    },
+    "detalhe": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Detalhe"
+    }
+  },
+  "required": [
+    "erro"
+  ],
+  "title": "Erro",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/Erro.schema.json",
+  "x-versao-contrato": "1.1.0"
+}

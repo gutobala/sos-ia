@@ -1,0 +1,45 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requisitos_analisados", "funcoes_candidatas", "requisitos_sem_impacto_funcional_confirmado", "questoes_pendentes", "limitacoes_da_analise"],
+  "properties": {
+    "requisitos_analisados": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["requisito_id", "objetivo_usuario", "comportamento_existente", "comportamento_solicitado", "aspectos_nao_funcionais", "informacoes_ausentes"],
+        "properties": {
+          "requisito_id": {"type": "string"},
+          "objetivo_usuario": {"type": "string"},
+          "comportamento_existente": {"type": ["string", "null"]},
+          "comportamento_solicitado": {"type": "string"},
+          "aspectos_nao_funcionais": {"type": "array", "items": {"type": "string"}},
+          "informacoes_ausentes": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "funcoes_candidatas": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["requisito_id", "nome_funcao", "funcao_catalogo_id", "tipo_ifpug", "movimento", "justificativa", "evidencias", "lacunas", "status"],
+        "properties": {
+          "requisito_id": {"type": "string"},
+          "nome_funcao": {"type": "string"},
+          "funcao_catalogo_id": {"type": ["string", "null"]},
+          "tipo_ifpug": {"type": "string", "enum": ["EE", "SE", "CE", "ALI", "AIE", "INDETERMINADO"]},
+          "movimento": {"type": "string", "enum": ["INCLUSAO", "ALTERACAO", "EXCLUSAO", "SEM_ALTERACAO", "INDETERMINADO"]},
+          "justificativa": {"type": "string"},
+          "evidencias": {"type": "array", "items": {"type": "string"}},
+          "lacunas": {"type": "array", "items": {"type": "string"}},
+          "status": {"type": "string", "enum": ["SUSTENTADA", "HIPOTESE", "INDETERMINADA"]}
+        }
+      }
+    },
+    "requisitos_sem_impacto_funcional_confirmado": {"type": "array", "items": {"type": "string"}},
+    "questoes_pendentes": {"type": "array", "items": {"type": "string"}},
+    "limitacoes_da_analise": {"type": "array", "items": {"type": "string"}}
+  }
+}

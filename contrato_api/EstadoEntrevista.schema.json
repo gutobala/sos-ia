@@ -1,0 +1,336 @@
+{
+  "$defs": {
+    "CandidatoFuncionalidade": {
+      "additionalProperties": false,
+      "properties": {
+        "nome": {
+          "title": "Nome",
+          "type": "string"
+        },
+        "tipo_ifpug": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tipo Ifpug"
+        },
+        "pagina_wiki": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pagina Wiki"
+        },
+        "trecho": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trecho"
+        },
+        "similaridade": {
+          "title": "Similaridade",
+          "type": "number"
+        }
+      },
+      "required": [
+        "nome",
+        "similaridade"
+      ],
+      "title": "CandidatoFuncionalidade",
+      "type": "object"
+    },
+    "DecisaoRegra": {
+      "description": "Escolha do usuário diante da regra documentada (o segmento fica CORRETIVO até ele decidir).",
+      "enum": [
+        "ACEITA",
+        "RECUSADA"
+      ],
+      "title": "DecisaoRegra",
+      "type": "string"
+    },
+    "Pergunta": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "segmento": {
+          "title": "Segmento",
+          "type": "integer"
+        },
+        "slot": {
+          "description": "código do slot que a resposta preenche ('gatilho' quando é pergunta de complexidade oculta)",
+          "title": "Slot",
+          "type": "string"
+        },
+        "texto": {
+          "title": "Texto",
+          "type": "string"
+        },
+        "dica": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dica"
+        }
+      },
+      "required": [
+        "id",
+        "segmento",
+        "slot",
+        "texto"
+      ],
+      "title": "Pergunta",
+      "type": "object"
+    },
+    "RegraDocumentada": {
+      "additionalProperties": false,
+      "properties": {
+        "pagina": {
+          "title": "Pagina",
+          "type": "string"
+        },
+        "secao": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Secao"
+        },
+        "trecho": {
+          "title": "Trecho",
+          "type": "string"
+        },
+        "similaridade": {
+          "title": "Similaridade",
+          "type": "number"
+        },
+        "orientacao": {
+          "description": "texto para o usuário: o comportamento parece seguir esta regra; se quiser mudá-la, é evolutivo",
+          "title": "Orientacao",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pagina",
+        "trecho",
+        "similaridade",
+        "orientacao"
+      ],
+      "title": "RegraDocumentada",
+      "type": "object"
+    },
+    "Segmento": {
+      "additionalProperties": false,
+      "properties": {
+        "n": {
+          "minimum": 1,
+          "title": "N",
+          "type": "integer"
+        },
+        "tipo": {
+          "$ref": "#/$defs/TipoSegmento"
+        },
+        "resumo": {
+          "title": "Resumo",
+          "type": "string"
+        },
+        "slots": {
+          "items": {
+            "$ref": "#/$defs/Slot"
+          },
+          "title": "Slots",
+          "type": "array"
+        }
+      },
+      "required": [
+        "n",
+        "tipo",
+        "resumo",
+        "slots"
+      ],
+      "title": "Segmento",
+      "type": "object"
+    },
+    "Slot": {
+      "additionalProperties": false,
+      "properties": {
+        "codigo": {
+          "title": "Codigo",
+          "type": "string"
+        },
+        "rotulo": {
+          "title": "Rotulo",
+          "type": "string"
+        },
+        "obrigatorio": {
+          "title": "Obrigatorio",
+          "type": "boolean"
+        },
+        "valor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valor"
+        },
+        "preenchido": {
+          "description": "valor presente e com o mínimo exigido pelo roteiro (validação determinística)",
+          "title": "Preenchido",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "codigo",
+        "rotulo",
+        "obrigatorio",
+        "preenchido"
+      ],
+      "title": "Slot",
+      "type": "object"
+    },
+    "TipoSegmento": {
+      "enum": [
+        "CORRETIVO",
+        "EVOLUTIVO_EXISTENTE",
+        "EVOLUTIVO_NOVO"
+      ],
+      "title": "TipoSegmento",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Resposta de POST /entrevistas, POST /entrevistas/{id}/respostas e GET /entrevistas/{id}.",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "versao_contrato": {
+      "default": "1.1.0",
+      "title": "Versao Contrato",
+      "type": "string"
+    },
+    "rodada": {
+      "description": "rodada atual de perguntas (máx. 2; 3 = encerrada)",
+      "maximum": 3,
+      "minimum": 1,
+      "title": "Rodada",
+      "type": "integer"
+    },
+    "pronto": {
+      "description": "true: não há mais perguntas; chamar POST /contrato",
+      "title": "Pronto",
+      "type": "boolean"
+    },
+    "segmentos": {
+      "items": {
+        "$ref": "#/$defs/Segmento"
+      },
+      "title": "Segmentos",
+      "type": "array"
+    },
+    "candidatos_funcionalidade": {
+      "items": {
+        "$ref": "#/$defs/CandidatoFuncionalidade"
+      },
+      "title": "Candidatos Funcionalidade",
+      "type": "array"
+    },
+    "regra_documentada": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RegraDocumentada"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "decisao_regra": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DecisaoRegra"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "null com regra_documentada presente = o SOS deve perguntar ao usuário e chamar POST /entrevistas/{id}/regra"
+    },
+    "perguntas": {
+      "items": {
+        "$ref": "#/$defs/Pergunta"
+      },
+      "title": "Perguntas",
+      "type": "array"
+    },
+    "nota": {
+      "description": "medidor de qualidade do pedido",
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Nota",
+      "type": "integer"
+    },
+    "dicas_medidor": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Dicas Medidor",
+      "type": "array"
+    },
+    "analise_ia": {
+      "description": "false quando a resposta veio do roteiro fixo (sem IA)",
+      "title": "Analise Ia",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "rodada",
+    "pronto",
+    "segmentos",
+    "nota",
+    "analise_ia"
+  ],
+  "title": "EstadoEntrevista",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/EstadoEntrevista.schema.json",
+  "x-versao-contrato": "1.1.0"
+}

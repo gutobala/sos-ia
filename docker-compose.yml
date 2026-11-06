@@ -1,0 +1,68 @@
+# sos-ia: todos os serviços do núcleo juntos.
+#   docker compose up -d --build        (1ª vez: o banco é restaurado de dados/sosia.dump; demora alguns minutos)
+#   docker compose logs -f api
+# Variáveis: arquivo .env na raiz (modelo em .env.example). Nada de chave no repositório.
+name: sos-ia
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: sosia_db
+    shm_size: 1gb
+    command: ["postgres", "-c", "maintenance_work_mem=512MB", "-c", "max_parallel_maintenance_workers=2"]
+    environment:
+      POSTGRES_DB: sosia
+      POSTGRES_USER: sosia
+      POSTGRES_PASSWORD: ${SOSIA_DB_SENHA:-sosia_local}
+    ports:
+      - "127.0.0.1:${SOSIA_DB_PORTA:-5434}:5432"   # só para inspeção local; a API fala pela rede interna do compose
+    volumes:
+      - sosia_pgdata:/var/lib/postgresql/data
+      - ./docker/db-init:/docker-entrypoint-initdb.d:ro
+      - ./dados:/dados:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sosia -d sosia && test -f /var/lib/postgresql/data/.sosia_restaurado"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    restart: unless-stopped
+
+  api:
+    build: .
+    container_name: sosia_api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SOSIA_DSN: "host=db port=5432 dbname=sosia user=sosia password=${SOSIA_DB_SENHA:-sosia_local}"
+      SOSIA_MOCK: ${SOSIA_MOCK:-1}
+      SOSIA_TOKEN: ${SOSIA_TOKEN:-}
+      SOSIA_LLM: ${SOSIA_LLM:-openai}
+      SOSIA_EMB: ${SOSIA_EMB:-azure}
+      SOSIA_PII_MODO: ${SOSIA_PII_MODO:-local}
+      SOSIA_MODELO_CHAT: ${SOSIA_MODELO_CHAT:-gpt-5.4-mini}
+      SOSIA_MODELO_RACIOCINIO: ${SOSIA_MODELO_RACIOCINIO:-gpt-5.4}
+      SOSIA_MODELO_PREVIA: ${SOSIA_MODELO_PREVIA:-gpt-4.1}
+      SOSIA_MODELO_ANONIMIZACAO: ${SOSIA_MODELO_ANONIMIZACAO:-gpt-5.4-mini}
+      SOSIA_MODELO_EMBEDDING: ${SOSIA_MODELO_EMBEDDING:-text-embedding-3-large}
+      SOSIA_REASONING_EFFORT: ${SOSIA_REASONING_EFFORT:-low}
+      SOSIA_MAX_TOKENS: ${SOSIA_MAX_TOKENS:-6000}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-}
+    volumes:
+      # nomes conhecidos para a anonimização local (dado pessoal: fica fora da imagem e do git; gerar com migracao\exporta_nomes.py)
+      - ./dados/nomes_anonimizacao.txt:/app/dados/nomes_anonimizacao.txt:ro
+    ports:
+      - "${SOSIA_API_PORTA:-8010}:8010"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8010/saude').status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  sosia_pgdata:
