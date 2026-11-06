@@ -1,10 +1,12 @@
 """Complexidade pelo HISTÓRICO de contagens (cópia do runtime de PRE-PROJETO/app/complexidade_historico.py, 03–04/11/2026).
 
-Para cada função identificada, busca a mesma função (mesmo sistema e tipo, nome parecido por embeddings e5 locais, cosseno >= LIMIAR,
+Para cada função identificada, busca a mesma função (mesmo sistema e tipo, nome parecido por embeddings, cosseno >= LIMIAR,
 mesmo verbo e mesmo objeto) em contagens DETALHADA e BASELINE feitas ANTES da data de referência (sem as do próprio chamado).
 Achou: usa a complexidade gravada; não achou: reserva (texto, perfil do sistema ou NESMA). Funções de dados também casam pela tabela
 física citada no pedido (contagem_funcao_ar_tr) e o ALI implícito entra quando o pedido manda gravar campo na tabela.
-PF = peso IFPUG × fator de movimento NESMA. O e5 é obrigatório aqui (o limiar 0,95 foi calibrado com ele).
+PF = peso IFPUG × fator de movimento NESMA. O modelo segue SOSIA_EMB (universo.vetores), e o limiar padrão depende dele: 0,95 no e5,
+0,78 no 3-large (06/11/2026, migracao/calibra_historico.py: menor corte com acerto de complexidade >= o do e5; 3.239 funções,
+cobertura 64,4% × 65,1% e acerto 83,2% × 82,9%; nos 83 chamados da paridade MAE 19,85 × 19,84, 78 iguais, p = 0,69).
 """
 import datetime
 import os
@@ -13,12 +15,13 @@ import unicodedata
 
 import numpy as np
 
-from .. import embeddings
+from .. import config
 from . import regras as cc
 from . import regras as e1
 from . import universo as uf
 
-LIMIAR = float(os.environ.get("APF_HIST_LIMIAR", "0.95"))   # 0,93 casava funções diferentes (03/11/2026)
+# e5: 0,93 casava funções diferentes (03/11/2026). 3-large: escala de cosseno diferente (ver docstring).
+LIMIAR = float(os.environ.get("APF_HIST_LIMIAR", "0.95" if config.EMB == "e5" else "0.78"))
 # Filtro de casamento (03/11/2026, pedido do analista): além do cosseno, exige o MESMO verbo e o MESMO objeto (palavras de conteúdo).
 # APF_HIST_FILTRO=0 volta à regra só por cosseno. APF_HIST_ESCOLHA=recente escolhe a contagem mais recente entre as que passam no
 # filtro (testado: igual em 2023+ e pior antes; padrão = a mais parecida, empate fica a mais recente).
@@ -149,8 +152,7 @@ def nome_base(n):
 
 
 class Historico:
-    def __init__(self, conn, modelo=None):
-        self.m = modelo or embeddings._e5()
+    def __init__(self, conn):
         _, self.vet = uf.carrega(conn)
         rows = conn.execute(
             """SELECT ct.sistema_id, coalesce(ct.dt_contagem, c.dt_abertura::date) dt, c.numero chamado, cf.tipo_funcao tipo,
@@ -177,8 +179,21 @@ class Historico:
     def _vq(self, tipo, nome):
         k = (tipo, uf.norm(nome))
         if k not in self._q:
-            self._q[k] = self.m.encode([f"passage: {tipo} {nome.lower()}"], normalize_embeddings=True, show_progress_bar=False)[0]
+            self._q[k] = uf.vetores([(tipo, nome)])[0]
         return self._q[k]
+
+    def prepara(self, funcs):
+        """Gera de uma vez (uma chamada à API no 3-large) os vetores dos nomes que pf() vai buscar."""
+        falta = {}
+        for f in funcs:
+            t = f.get("tipo_ifpug")
+            if t in uf.TIPOS and f.get("movimento") not in ("INCLUSAO", "SEM_ALTERACAO", "NAO_MENSURAVEL"):
+                n = nome_base(nome_dados(f["nome_funcao"]) if t in ("ALI", "AIE") else f["nome_funcao"])
+                if (t, uf.norm(n)) not in self._q:
+                    falta[(t, uf.norm(n))] = (t, n)
+        if falta:
+            for k, v in zip(falta, uf.vetores(list(falta.values()))):
+                self._q[k] = v
 
     def perfil(self, sistema_id, data_ref, excluir, tipo):
         """Peso IFPUG médio das funções do mesmo sistema e tipo contadas nos PERFIL_ANOS antes de data_ref (None se poucas)."""
@@ -239,6 +254,7 @@ class Historico:
         texto: pedido (+ anexos), para casar funções de dados pelas tabelas citadas e acrescentar o ALI implícito.
         Devolve (pf, linhas, nº achadas no histórico)."""
         tabs = tabelas_do_texto(texto) if (TABELA and texto) else {}
+        self.prepara(funcs)
         pf, linhas, achou = self._pf(funcs, sistema_id, data_ref, excluir, reserva, tabs)
         if not tabs:
             return pf, linhas, achou

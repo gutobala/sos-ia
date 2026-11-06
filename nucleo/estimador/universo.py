@@ -1,6 +1,8 @@
-"""Universo de funções conhecidas por sistema (todas as planilhas), com o vetor e5 de cada nome distinto em cache local
-(cópia do runtime de PRE-PROJETO/app/universo_funcoes.py). Cache: SOSIA_CACHE_UNIVERSO (padrão dados/cache_universo.pkl);
-nomes novos são embutidos e acrescentados ao cache na primeira chamada.
+"""Universo de funções conhecidas por sistema (todas as planilhas), com o vetor de cada nome distinto em cache local
+(cópia do runtime de PRE-PROJETO/app/universo_funcoes.py). O modelo segue SOSIA_EMB: e5 local ("passage: TIPO nome") ou
+text-embedding-3-large pela API ("TIPO nome"; recalibrado em 06/11/2026, migracao/calibra_historico.py).
+Cache: SOSIA_CACHE_UNIVERSO (padrão dados/cache_universo.pkl no e5, dados/cache_universo_3l.pkl no 3-large); nomes novos são
+embutidos e acrescentados ao cache na primeira chamada (universo inteiro no 3-large: ~17,8 mil nomes, ~US$ 0,02).
 """
 import os
 import pickle
@@ -11,7 +13,8 @@ import numpy as np
 
 from .. import config, embeddings
 
-CACHE = config.env("SOSIA_CACHE_UNIVERSO", os.path.join(config.RAIZ, "dados", "cache_universo.pkl"))
+CACHE = config.env("SOSIA_CACHE_UNIVERSO", os.path.join(config.RAIZ, "dados",
+                   "cache_universo.pkl" if config.EMB == "e5" else "cache_universo_3l.pkl"))
 TIPOS = ("ALI", "AIE", "EE", "CE", "SE")
 
 
@@ -27,6 +30,14 @@ def ocorrencias(conn):
            WHERE cf.tipo_funcao = ANY(%s)""", (list(TIPOS),)).fetchall()
 
 
+def vetores(pares):
+    """Vetores normalizados de (tipo, nome) no modelo configurado, no formato do cache."""
+    if config.EMB == "e5":
+        return embeddings._e5().encode([f"passage: {t} {n.lower()}" for t, n in pares], normalize_embeddings=True, batch_size=128,
+                                       show_progress_bar=False)
+    return embeddings.api_textos([f"{t} {n.lower()}" for t, n in pares])[0]
+
+
 def carrega(conn):
     """(ocorrências, {(sistema, tipo, nome_norm): vetor})."""
     oc = ocorrencias(conn)
@@ -37,10 +48,9 @@ def carrega(conn):
             cache = pickle.load(f)
     falta = [k for k in chaves if k not in cache]
     if falta:
-        m = embeddings._e5()
-        for i in range(0, len(falta), 1024):
-            lote = falta[i:i + 1024]
-            emb = m.encode([f"passage: {t} {n.lower()}" for _, t, n in lote], normalize_embeddings=True, batch_size=128, show_progress_bar=False)
+        for i in range(0, len(falta), 512):
+            lote = falta[i:i + 512]
+            emb = vetores([(t, n) for _, t, n in lote])
             for k, e in zip(lote, emb):
                 cache[k] = e.astype(np.float32)
             print(f"  embeddings {i + len(lote)}/{len(falta)}", flush=True)

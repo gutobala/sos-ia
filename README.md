@@ -103,10 +103,16 @@ universo, prévia, campos). Paridade com a pesquisa (`migracao\confere_paridade.
 Para rodar o RAG/histórico fora do Docker: `pip install torch --index-url https://download.pytorch.org/whl/cpu` e
 `pip install sentence-transformers`; cache do universo em `dados\cache_universo.pkl`.
 **Embeddings (05/11/2026): o padrão é o text-embedding-3-large** (`SOSIA_EMB=azure`, coluna `embedding_3l`), na wiki e no
-catálogo. Na comparação com o e5 em todos os sistemas (`dadosvalia_todos.log`; 556 chamados na wiki, 316 no catálogo), a wiki
-empatou e o catálogo ganhou (@10 de 20,2% para 25,9%, p=0,002). A imagem Docker não leva modelo local. O e5 continua obrigatório
-só no histórico de complexidade da Fase 3. Depois de recriar o `sosia` com `exporta_nucleo.py`, rode
-`migracao\embeda_3large.py` (cerca de US$ 1,20 para o corpus todo; a exportação só leva os vetores do e5).
+catálogo. Na comparação com o e5 em todos os sistemas (`dados\avalia_todos.log`; 556 chamados na wiki, 316 no catálogo), a wiki
+empatou e o catálogo ganhou (@10 de 20,2% para 25,9%, p=0,002). A imagem Docker não leva modelo local. Depois de recriar o
+`sosia` com `exporta_nucleo.py`, rode `migracao\embeda_3large.py` (cerca de US$ 1,20 para o corpus todo; a exportação só leva os
+vetores do e5).
+**Histórico do estimador no 3-large (06/11/2026):** o casamento de nomes do histórico (Fase 3) também segue `SOSIA_EMB`. O limiar
+padrão é 0,95 no e5 e **0,78 no 3-large** (`APF_HIST_LIMIAR` sobrepõe). Calibrado em `migracao\calibra_historico.py`
+(`dados\calibra_historico.txt`): menor corte com acerto de complexidade >= o do e5 em 3.239 funções de alteração/exclusão
+(cobertura 64,4% × 65,1%, acerto 83,2% × 82,9%); nos 83 chamados da paridade, MAE 19,85 × 19,87, 78 iguais, p = 0,69. Com
+isso o núcleo inteiro roda sem modelo local. Cache do universo no 3-large: `dados\cache_universo_3l.pkl`; se faltar, é refeito
+pela API na primeira estimativa (~17,8 mil nomes, ~US$ 0,02, cerca de 1 min).
 
 ## Motor real da entrevista (passo 5, 05/11/2026)
 `SOSIA_MOCK=0` + `SOSIA_TOKEN` + chave do LLM → `nucleo/entrevista/motor.py` (o mesmo contrato 1.0.0 do mock):

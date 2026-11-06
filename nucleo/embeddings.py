@@ -4,8 +4,8 @@ Dois provedores (SOSIA_EMB), para o RAG da wiki (conhecimento_trecho) e o catál
   azure  PADRÃO desde 05/11/2026. text-embedding-3-large (dimensions=1024) pela API (OpenAI nos testes, Azure no contrato), na
          coluna `embedding_3l`. Corpus inteiro × e5 (dados/avalia_todos.log): empata na wiki e ganha no catálogo (@10 20,2→25,9%,
          p=0,002). Mesmo modelo do ANIA. A API não precisa de modelo local.
-  e5     intfloat/multilingual-e5-large local (coluna `embedding`). Continua OBRIGATÓRIO para o histórico de complexidade e o
-         universo de funções (limiar 0,95 calibrado nele) — só na estimativa (Fase 3), não na entrevista.
+  e5     intfloat/multilingual-e5-large local (coluna `embedding`). Opcional: o histórico de complexidade (Fase 3) também segue
+         SOSIA_EMB desde 06/11/2026 (limiar 0,95 no e5, 0,78 no 3-large; ver estimador/historico.py).
 Ingestão: `passagens` gera o vetor no provedor configurado; `preenche_3l` completa o que estiver sem vetor 3-large (wiki e catálogo).
 """
 import functools
