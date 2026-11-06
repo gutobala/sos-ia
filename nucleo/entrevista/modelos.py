@@ -7,7 +7,7 @@ from typing import Annotated, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-VERSAO_CONTRATO = "1.3.1"
+VERSAO_CONTRATO = "1.3.2"
 # 1.1.0 (05/11/2026, aditiva): decisão do usuário sobre a regra documentada — POST /entrevistas/{id}/regra, campo
 #        `decisao_regra` no estado e no contrato, `regra_documentada` no contrato, slot pseudo "decisao_regra" em `faltando`.
 # 1.2.0 (05/11/2026, aditiva): confirmação do Escopo do Pedido — POST /entrevistas/{id}/confirmacao (um chamado por tipo, no
@@ -18,6 +18,8 @@ VERSAO_CONTRATO = "1.3.1"
 #        se encerra: devolve só as perguntas fixas do que falta (sem IA, sem limite de rodadas). Campo `complemento` no estado.
 # 1.3.1 (06/11/2026, correção, sem campo novo): `GrupoChamado.texto` ganha a seção INFORMAÇÕES DO PEDIDO (respostas da
 #        entrevista); o critério de aceite do roteiro fixo deixa de ser o "como reproduzir" (roteiros.criterio_fixo).
+# 1.3.2 (06/11/2026, correção, sem campo novo): concordância da frase que aponta o outro chamado ("O requisito 2 … está" /
+#        "Os requisitos 2 e 3 … estão").
 
 
 class Base(BaseModel):

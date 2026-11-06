@@ -113,6 +113,14 @@ def titulo(base, tipo, n_grupos):
     return base[:200 - len(suf)].rstrip() + suf
 
 
+def frase_outro_chamado(nome_tipo, numeros):
+    """Referência aos requisitos que ficaram no outro chamado, com concordância: "O requisito 2 … está" / "Os requisitos 2 e 3 … estão"."""
+    ns = [str(n) for n in numeros]
+    if len(ns) == 1:
+        return f"O requisito {ns[0]} deste pedido está no chamado {nome_tipo} vinculado (mesmo pacote)."
+    return f"Os requisitos {', '.join(ns[:-1])} e {ns[-1]} deste pedido estão no chamado {nome_tipo} vinculado (mesmo pacote)."
+
+
 def texto(tipo, escopo, reqs, outros, regra=None, segmentos=()):
     """Texto corrido para o DS_SOLICITACAO. O que mais importa vem primeiro: o SOS corta em ~3900 bytes.
     `segmentos`: os do grupo, para a seção INFORMAÇÕES DO PEDIDO (respostas da entrevista)."""
@@ -128,9 +136,7 @@ def texto(tipo, escopo, reqs, outros, regra=None, segmentos=()):
                 L += [f"{r.n}. {r.descricao}", f"   Critério de aceite: {r.criterio_aceite}"]
             L.append("")
     if outros:
-        outro = NOME_TIPO[outros[0].tipo]
-        ns = ", ".join(str(r.n) for r in outros)
-        L += [f"Os requisitos {ns} deste pedido estão no chamado {outro} vinculado (mesmo pacote).", ""]
+        L += [frase_outro_chamado(NOME_TIPO[outros[0].tipo], [r.n for r in outros]), ""]
     for nome, itens in (("FORA DE ESCOPO", [x.strip() for x in escopo.fora_escopo if x.strip()]),
                         ("INTEGRAÇÕES", [f"{i.sistema} ({i.sentido}): {i.descricao}" for i in escopo.integracoes]),
                         ("DÚVIDAS EM ABERTO", [x.strip() for x in escopo.duvidas if x.strip()])):

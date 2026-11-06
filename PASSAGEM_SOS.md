@@ -1,9 +1,14 @@
 # sos-ia → sessão do SOS: o que mudou e o que o SOS precisa fazer (06/11/2026)
 
 O serviço sos-ia (núcleo da abertura de chamados com IA) está pronto para a integração. O motor real da entrevista funciona de
-ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.3.1** (aditivo sobre a 1.2.0:
+ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.3.2** (aditivo sobre a 1.2.0:
 nenhum campo ou rota existente mudou de significado). Os JSON Schemas de cada endpoint ficam em `contrato_api/`, com o
 `openapi.json`.
+
+**Correção 1.3.2 (o SOS não muda nada):** a frase que aponta o outro chamado do pacote agora concorda em número: "O requisito 2
+deste pedido está no chamado evolutivo vinculado" / "Os requisitos 2 e 3 … estão". A outra parte do pedido 1.3.2 (regra
+documentada no motor real) está em teste à parte: o RAG já traz a RN13, mas o LLM não a aponta porque o prompt pede que a regra
+"explique claramente" o relato. Mudança de prompt só depois de medida num gabarito.
 
 **Correção 1.3.1 (o SOS não muda nada):** o `texto` de cada grupo da confirmação ganhou a seção **INFORMAÇÕES DO PEDIDO**, logo
 depois de OBJETIVO, com as respostas da entrevista daquele chamado (onde ocorre, como reproduzir, desde quando/quem...; cada uma

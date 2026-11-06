@@ -51,7 +51,8 @@ def test_texto_com_as_secoes_e_a_referencia_ao_outro_chamado():
     assert t.startswith("OBJETIVO\nVoltar a salvar")
     assert t.index("ALTERAÇÕES NO QUE JÁ EXISTE") < t.index("FUNCIONALIDADES NOVAS") < t.index("FORA DE ESCOPO")
     assert "2. req do segmento 2\n   Critério de aceite: aceite 2" in t
-    assert "Os requisitos 1 deste pedido estão no chamado corretivo vinculado (mesmo pacote)." in t
+    assert "O requisito 1 deste pedido está no chamado corretivo vinculado (mesmo pacote)." in t
+    assert "Os requisitos 2 e 3 deste pedido estão no chamado evolutivo vinculado (mesmo pacote)." in corr.texto
     assert "- Benner (BUSCA): consulta" in t and "- Vale para contratos antigos?" in t and "- \n" not in t
     assert "REGRA DOCUMENTADA QUE O USUÁRIO QUER MUDAR\nsistemas:gai:regras / RN021" in t
     assert "PROBLEMAS A CORRIGIR" in corr.texto and "chamado evolutivo vinculado" in corr.texto
@@ -100,6 +101,13 @@ def test_criterio_fixo_nunca_e_como_reproduzir():
     assert roteiros.criterio_fixo("EVOLUTIVO_NOVO", {"exemplo_concreto": " contrato 9 deve dar 10 "}) == \
         "Conferir com o exemplo: contrato 9 deve dar 10"
     assert roteiros.criterio_fixo("EVOLUTIVO_EXISTENTE", {"exemplo_concreto": None}) == "Definir com o usuário."
+
+
+def test_frase_do_outro_chamado_singular_e_plural():
+    assert cf.frase_outro_chamado("evolutivo", [2]) == "O requisito 2 deste pedido está no chamado evolutivo vinculado (mesmo pacote)."
+    assert cf.frase_outro_chamado("evolutivo", [2, 3]) == \
+        "Os requisitos 2 e 3 deste pedido estão no chamado evolutivo vinculado (mesmo pacote)."
+    assert cf.frase_outro_chamado("corretivo", [1, 4, 5]).startswith("Os requisitos 1, 4 e 5 deste pedido estão")
 
 
 def test_segmento_inexistente_e_faltando():
