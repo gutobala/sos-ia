@@ -45,11 +45,12 @@ def raciocinio(mod):
 def _conteudo(prompt, imagens):
     if not imagens:
         return prompt
-    if config.MODO_PII != "contrato":
-        raise LLMIndisponivel("imagens só podem ir ao LLM no modo de PII 'contrato'")
+    if config.MODO_PII not in ("contrato", "teste"):
+        raise LLMIndisponivel("imagens só podem ir ao LLM nos modos de PII 'contrato' ou 'teste'")
     partes = [{"type": "text", "text": prompt}]
     for im in imagens:
-        partes.append({"type": "image_url", "image_url": {"url": f"data:{im['mime']};base64,{im['base64']}"}})
+        partes.append({"type": "image_url", "image_url": {"url": f"data:{im['mime']};base64,{im['base64']}",
+                                                          "detail": config.IMAGEM_DETALHE}})
     return partes
 
 

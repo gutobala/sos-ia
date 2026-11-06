@@ -33,6 +33,21 @@ def test_llm_recusa_imagem_fora_do_modo_contrato():
         llm._conteudo("p", [{"mime": "image/png", "base64": "AAAA"}])
 
 
+def test_modo_teste_envia_imagem_e_anonimiza_texto(monkeypatch):
+    import importlib
+    monkeypatch.setenv("SOSIA_PII_MODO", "teste")
+    monkeypatch.setenv("SOSIA_LLM", "openai")
+    importlib.reload(config)
+    try:
+        im = {"nome": "print.png", "mime": "image/png", "base64": "AAAA"}
+        texto, imgs, notas = pii.prepara("relato com CPF 123.456.789-09", [im])
+        assert imgs == [im] and "123.456.789-09" not in texto and notas
+        assert llm._conteudo("p", imgs)[1]["image_url"]["detail"] == "high"
+    finally:
+        monkeypatch.setenv("SOSIA_PII_MODO", "local")
+        importlib.reload(config)
+
+
 def test_contrato_exige_azure(monkeypatch):
     import importlib
     monkeypatch.setenv("SOSIA_PII_MODO", "contrato")

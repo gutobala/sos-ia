@@ -45,7 +45,9 @@ LLM = env("SOSIA_LLM", "openai")            # openai (testes, chave pessoal) | a
 EMB = env("SOSIA_EMB", "azure")             # azure (text-embedding-3-large; padrão desde 05/11/2026) | e5 (CPU local)
 # local: anonimiza antes do LLM e troca imagens pelo OCR anonimizado (obrigatório fora do contrato Azure)
 # contrato: texto e imagens vão à Azure como vieram (exige aprovação da Segurança/LGPD)
+# teste: texto anonimizado como no local, mas as imagens vão originais (só testes controlados, com imagens SEM dado pessoal)
 MODO_PII = env("SOSIA_PII_MODO", "local")
+IMAGEM_DETALHE = env("SOSIA_IMAGEM_DETALHE", "high")   # high | low | auto (high: lê melhor telas e texto miúdo, mais tokens)
 # modelos por papel (nomes = deployments na Azure; na OpenAI, nomes de modelo)
 MODELO_CHAT = env("SOSIA_MODELO_CHAT", "gpt-5.4-mini")
 MODELO_RACIOCINIO = env("SOSIA_MODELO_RACIOCINIO", "gpt-5.4")
@@ -54,8 +56,8 @@ MODELO_ANONIMIZACAO = env("SOSIA_MODELO_ANONIMIZACAO", "gpt-5.4-mini")
 MODELO_EMBEDDING = env("SOSIA_MODELO_EMBEDDING", "text-embedding-3-large")
 REASONING_EFFORT = env("SOSIA_REASONING_EFFORT", "low")
 MAX_TOKENS = int(env("SOSIA_MAX_TOKENS", "6000"))
-for _nome, _v, _ok in (("SOSIA_PII_MODO", MODO_PII, ("local", "contrato")), ("SOSIA_LLM", LLM, ("openai", "azure")),
-                       ("SOSIA_EMB", EMB, ("e5", "azure"))):
+for _nome, _v, _ok in (("SOSIA_PII_MODO", MODO_PII, ("local", "contrato", "teste")), ("SOSIA_LLM", LLM, ("openai", "azure")),
+                       ("SOSIA_EMB", EMB, ("e5", "azure")), ("SOSIA_IMAGEM_DETALHE", IMAGEM_DETALHE, ("high", "low", "auto"))):
     if _v not in _ok:      # valor inválido nunca pode cair em "não anonimiza" por omissão
         raise RuntimeError(f"{_nome}={_v!r} inválido; use {' ou '.join(_ok)}")
 if MODO_PII == "contrato" and LLM != "azure":

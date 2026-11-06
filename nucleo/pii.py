@@ -4,6 +4,7 @@ Modo (config.MODO_PII):
   local     anonimiza o texto (regras abaixo) e troca cada imagem pelo texto do OCR anonimizado; a imagem nunca sai.
             Obrigatório fora do contrato Azure (testes com a chave pessoal).
   contrato  texto e imagens vão como vieram (operador sob contrato; precedente: ANIA). Só com SOSIA_LLM=azure.
+  teste     texto anonimizado como no local; imagens originais. Só para testes controlados com imagens sem dado pessoal.
 
 Anonimização local = cópia de PRE-PROJETO/importador/anonimiza.py (máscaras por padrão, nomes por palavra-gatilho, nomes
 conhecidos), com duas diferenças: (1) os nomes conhecidos vêm de um arquivo local (SOSIA_NOMES_ARQ, um por linha, fora do git e
@@ -186,6 +187,9 @@ def prepara(texto, imagens=(), conn=None):
     """Devolve (texto para o LLM, imagens para o LLM, notas). Ver o docstring do módulo para os dois modos."""
     if config.MODO_PII == "contrato":
         return texto, list(imagens), []
+    if config.MODO_PII == "teste":
+        notas = ["modo de PII 'teste': imagens enviadas sem anonimização"] if imagens else []
+        return anonimizar(texto, conn), list(imagens), notas
     partes, notas = [anonimizar(texto, conn)], []
     for im in imagens:
         ocr = _ocr(im)
