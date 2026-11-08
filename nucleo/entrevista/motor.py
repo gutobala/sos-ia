@@ -145,6 +145,17 @@ def rag(conn, intencao, sistema_id, wiki, texto):
     return docs, cand
 
 
+def riscado(d):
+    """Trecho revogado na wiki: seção riscada (`~~RN.189 …~~`) ou texto inteiro entre `~~ ~~`. Não vai ao prompt: o LLM apontava
+    regra revogada como regra documentada (laboratório 1.3.2, RN151 do GAI). Risco parcial dentro do texto não conta."""
+    t = (d.get("texto") or "").strip()
+    return "~~" in (d.get("secao") or "") or (len(t) > 4 and t.startswith("~~") and t.endswith("~~"))
+
+
+def sem_riscados(docs):
+    return [d for d in docs if not riscado(d)]
+
+
 # ---------------------------------------------------------------- montagem do prompt
 def _fmt_segs(segs):
     if not segs:
@@ -376,7 +387,8 @@ class Motor:
             est = dict(intencao=req.intencao.value, sigla=req.sigla, texto=texto, notas_pii=notas, rodada=1, segs=[], perguntas=[],
                        respostas=[], gatilhos_feitos=[], docs=[], candidatos=[], regra=None, decisao=None, nota=0, dicas=[], contrato=None)
             try:
-                est["docs"], est["candidatos"] = rag(conn, req.intencao, sid, wiki, texto)
+                docs, est["candidatos"] = rag(conn, req.intencao, sid, wiki, texto)
+                est["docs"] = sem_riscados(docs)
             except Exception as e:  # noqa: BLE001  (sem RAG a entrevista continua)
                 conn.rollback()
                 est["notas_pii"].append(f"RAG indisponível: {type(e).__name__}")

@@ -307,6 +307,23 @@ def test_contrato_fixo_criterio_nunca_e_como_reproduzir(ambiente):
     assert passos not in k.requisitos[0].criterio_aceite
 
 
+def test_trecho_riscado_nao_chega_ao_prompt(ambiente, monkeypatch):
+    """Regra revogada na wiki (riscada) sai antes do prompt e não pode ser apontada como regra documentada."""
+    riscada = dict(pagina="sistemas:gai:regras", titulo="Regras de negócio", secao="~~RN151 - Troca de leiloeiro~~",
+                   tipo="regras_de_negocio", texto="~~Após a publicação não é permitido trocar o leiloeiro.~~", cos=0.9)
+    so_texto = dict(riscada, secao="RN152", texto="~~Regra revogada inteira.~~")
+    parcial = dict(riscada, secao="RN153", texto="O sistema não permite ~~excluir~~ alterar o item publicado.")
+    monkeypatch.setattr(M, "rag", lambda conn, intencao, sid, wiki, texto: ([dict(riscada), dict(so_texto), dict(parcial), dict(DOCS[1])], []))
+    mot, usa = ambiente
+    f = usa(resp_entrevista(regra=1, orient="Pela regra, não é permitido trocar o leiloeiro depois da publicação."))
+    e = mot.criar(nova(relato="O sistema não deixa trocar o leiloeiro da ordem de serviço depois da publicação."))
+    prompt = f.prompts[0][1]
+    assert "RN151" not in prompt and "Regra revogada inteira" not in prompt
+    assert "RN153" in prompt and "RN021" in prompt                                  # risco parcial e regra vigente ficam
+    assert e.regra_documentada.secao == "RN153"                                    # o [1] do prompt agora é a RN153
+    assert M.riscado(dict(secao="RN1", texto="~~")) is False and M.sem_riscados([]) == []
+
+
 def test_id_inexistente(ambiente):
     mot, _ = ambiente
     with pytest.raises(KeyError):

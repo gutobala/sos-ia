@@ -135,6 +135,8 @@ pela API na primeira estimativa (~17,8 mil nomes, ~US$ 0,02, cerca de 1 min).
   - perguntas só para slot vazio ou gatilho detectado, no máximo 5; slot vazio que o LLM esqueceu ganha a pergunta fixa;
   - no máximo 2 rodadas do LLM; depois, complemento com as perguntas fixas do que falta (1.3.0);
   - a regra documentada só aparece se o trecho veio do RAG e for regra, mensagem ou caso de uso;
+  - trecho riscado na wiki (`~~…~~`, regra revogada) não vai ao prompt (`motor.sem_riscados`; 126 trechos em 13 sistemas;
+    laboratório da regra documentada, `docs/resultado-regra-documentada.md`);
   - `faltando` e `pode_confirmar`.
 - **Estado no banco da aplicação** (desde a 1.2.0, `sosia_app`: `app.entrevista`, `app.entrevista_evento`,
   `app.entrevista_escopo`, `app.entrevista_chamado`, criados sozinhos): eventos guardam modelo, tokens, custo e a resposta do
