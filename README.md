@@ -42,7 +42,7 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
 - Cabeçalho obrigatório (menos em `/saude`): `X-SOSIA-Token: mock` (em produção: valor de `SOSIA_TOKEN`).
 - Respostas sempre `application/json; charset=utf-8`; erros sempre no formato `Erro` `{erro, detalhe}`.
 
-## Contrato da API (versão 1.3.0) — `contrato_api/`
+## Contrato da API (versão 1.4.0) — `contrato_api/`
 | Rota | Entrada | Saída |
 |---|---|---|
 | `GET /saude` | — | `Saude` (o SOS decide IA × roteiro fixo por `ok`) |
@@ -62,6 +62,12 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
 - Slots obrigatórios e mínimos: `nucleo/entrevista/roteiros.py` (o `confirmarAbertura.asp` deve repetir a mesma regra).
 - Pergunta com `slot="gatilho"`: pergunta de complexidade oculta (integração, gravar × exibir...); a resposta não preenche slot,
   vai para `duvidas` do contrato.
+- **Abertura guiada (1.4.0; detalhes e JSON em `PASSAGEM_SOS.md` 4.7):** "Não sei" aceito só em itens não bloqueantes
+  (`roteiros.ACEITA_NAO_SEI`: como reproduzir, desde quando, exemplo, fora de escopo, outros sistemas) — vira `NAO_INFORMADO`,
+  dúvida determinística no contrato e nota menor; `Pergunta.opcoes` (até 4 da IA, limpas em `motor.opcoes`, + "Não sei informar"
+  posto pela aplicação); `origem` (usuario | documentacao | inferido) nos requisitos e integrações, marcada pelo LLM do contrato,
+  com evento `inferidos` (confirmados/removidos) na confirmação; `candidatos_confirmados` (ids do catálogo) gravados na v1 e no
+  texto do chamado. Correção junto: "não sei" deixou de disparar o gatilho de integração do SEI (`roteiros.sem_nao_sei`).
 - Máximo de 2 rodadas do LLM. **Complemento (1.3.0):** depois delas, se ainda faltar item obrigatório, a entrevista não se
   encerra: `complemento=true` e só as perguntas fixas do que falta (`roteiros.perguntas_complemento`; sem IA, sem gatilho, sem a
   decisão da regra, no máximo 5, ids `c{n}p{i}`), repetidas até completar. Evento `complemento`; `analise_ia` não muda.

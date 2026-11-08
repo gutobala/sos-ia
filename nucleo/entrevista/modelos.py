@@ -7,7 +7,7 @@ from typing import Annotated, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-VERSAO_CONTRATO = "1.3.2"
+VERSAO_CONTRATO = "1.4.0"
 # 1.1.0 (05/11/2026, aditiva): decisão do usuário sobre a regra documentada — POST /entrevistas/{id}/regra, campo
 #        `decisao_regra` no estado e no contrato, `regra_documentada` no contrato, slot pseudo "decisao_regra" em `faltando`.
 # 1.2.0 (05/11/2026, aditiva): confirmação do Escopo do Pedido — POST /entrevistas/{id}/confirmacao (um chamado por tipo, no
@@ -20,6 +20,10 @@ VERSAO_CONTRATO = "1.3.2"
 #        entrevista); o critério de aceite do roteiro fixo deixa de ser o "como reproduzir" (roteiros.criterio_fixo).
 # 1.3.2 (06/11/2026, correção, sem campo novo): concordância da frase que aponta o outro chamado ("O requisito 2 … está" /
 #        "Os requisitos 2 e 3 … estão").
+# 1.4.0 (08/11/2026, aditiva): abertura guiada — "Não sei" aceito em itens não bloqueantes (vira NAO_INFORMADO, dúvida no
+#        contrato, nota menor); `Pergunta.opcoes` (respostas rápidas); `origem` (usuario | documentacao | inferido) em
+#        `RequisitoContrato`, `Integracao` e `RequisitoEscopo`, com `RequisitoEditado.origem/n_contrato` e o evento `inferidos`;
+#        `CandidatoFuncionalidade.id`, `EscopoEditado.candidatos_confirmados` e `EscopoConfirmado.funcionalidades`.
 
 
 class Base(BaseModel):
@@ -74,7 +78,16 @@ class Segmento(Base):
     slots: list[Slot]
 
 
+class Origem(str, Enum):
+    """De onde veio um item do Escopo do Pedido (1.4.0). Só `usuario` é pedido dele; `inferido` é hipótese da análise, que o
+    usuário confirma ou remove na tela, e que o estimador mostra à parte (não infla a contagem)."""
+    USUARIO = "usuario"              # está no relato ou numa resposta
+    DOCUMENTACAO = "documentacao"    # veio da regra documentada / wiki citada
+    INFERIDO = "inferido"            # hipótese de solução (ex.: "criar uma rubrica")
+
+
 class CandidatoFuncionalidade(Base):
+    id: Optional[int] = Field(default=None, description="id da função no catálogo; é o que vai em EscopoEditado.candidatos_confirmados")
     nome: str
     tipo_ifpug: Optional[str] = None
     pagina_wiki: Optional[str] = None
@@ -109,6 +122,9 @@ class Pergunta(Base):
     slot: str = Field(description="código do slot que a resposta preenche ('gatilho' quando é pergunta de complexidade oculta)")
     texto: str
     dica: Optional[str] = None
+    opcoes: list[str] = Field(default_factory=list, max_length=5,
+                              description="respostas rápidas (botões); o texto livre continua valendo e a opção escolhida vai em "
+                                          "Resposta.texto. \"Não sei informar\" só vem nos itens que aceitam essa resposta")
 
 
 class EstadoEntrevista(Base):
@@ -145,12 +161,15 @@ class RequisitoContrato(Base):
     segmento: int
     descricao: str
     criterio_aceite: str
+    origem: Origem = Field(default=Origem.USUARIO, description="inferido = hipótese da análise: mostrar destacado para o usuário "
+                                                              "confirmar ou remover")
 
 
 class Integracao(Base):
     sistema: str
     sentido: str = Field(pattern=r"^(BUSCA|GRAVA|AMBOS)$")
     descricao: str
+    origem: Origem = Origem.USUARIO
 
 
 class SlotFaltando(Base):
@@ -207,6 +226,10 @@ class RequisitoEditado(Base):
     segmento: int = Field(ge=1, description="segmento de origem (Contrato.segmentos[].n); define o tipo e a natureza")
     descricao: str = Field(min_length=1, max_length=2000)
     criterio_aceite: str = Field(default="", max_length=2000)
+    origem: Origem = Field(default=Origem.USUARIO, description="a do requisito do contrato de onde veio (o usuário pode ter editado)")
+    n_contrato: Optional[int] = Field(default=None, ge=1, description="Contrato.requisitos[].n de onde veio; nulo = criado pelo "
+                                                                      "usuário na tela. Requisito inferido do contrato que não volta "
+                                                                      "aqui foi removido pelo usuário")
 
 
 class EscopoEditado(Base):
@@ -219,6 +242,9 @@ class EscopoEditado(Base):
     duvidas: list[Annotated[str, Field(max_length=1000)]] = Field(default_factory=list, max_length=30)
     integracoes: list[Integracao] = Field(default_factory=list, max_length=20)
     cd_usuario: Optional[int] = Field(default=None, description="session(\"CD_USUARIO\") do SOS, para auditoria (nunca o nome)")
+    candidatos_confirmados: list[int] = Field(default_factory=list, max_length=5,
+                                              description="ids (CandidatoFuncionalidade.id) das funcionalidades que o usuário "
+                                                          "marcou como afetadas; só ids mostrados nesta entrevista")
 
 
 class RequisitoEscopo(Base):
@@ -228,6 +254,7 @@ class RequisitoEscopo(Base):
     segmento: int
     descricao: str
     criterio_aceite: str
+    origem: Origem = Origem.USUARIO
 
 
 class GrupoChamado(Base):
@@ -247,6 +274,8 @@ class EscopoConfirmado(Base):
     analise_ia: bool
     nota: int = Field(ge=0, le=100)
     regra_documentada: Optional[RegraDocumentada] = Field(default=None, description="só quando aceita: trecho a anexar ao chamado")
+    funcionalidades: list[CandidatoFuncionalidade] = Field(default_factory=list,
+                                                           description="as funcionalidades confirmadas pelo usuário (vão no texto)")
 
 
 class ChamadoGerado(Base):

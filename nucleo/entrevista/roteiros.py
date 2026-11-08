@@ -52,6 +52,43 @@ PERGUNTA_SLOT = {
 }
 MAX_PERGUNTAS_COMPLEMENTO = 5
 
+# "Não sei" (1.4.0): estes itens aceitam a resposta e não bloqueiam a abertura; o valor vira NAO_INFORMADO, o item sai de
+# `faltando`, entra nas dúvidas do contrato e baixa a nota. Os demais (onde ocorre, o que aconteceu, funcionalidade, o que muda,
+# quem usa, informações guardadas, o que faz) continuam bloqueando: sem eles não se sabe o que fazer.
+ACEITA_NAO_SEI = {"desde_quando_quem", "como_reproduzir", "exemplo_concreto", "fora_de_escopo", "outros_sistemas"}
+NAO_INFORMADO = "Não informado (o usuário não soube responder)"
+OPCAO_NAO_SEI = "Não sei informar"
+_FRASES_NAO_SEI = {"não sei", "nao sei", "não sei informar", "nao sei informar", "não sei dizer", "nao sei dizer", "sei lá",
+                   "sei la", "não lembro", "nao lembro", "desconheço", "desconheco", "não tenho essa informação",
+                   "nao tenho essa informacao", "não sei responder", "nao sei responder"}
+
+
+def e_nao_sei(texto):
+    """True se a resposta inteira é um "não sei" (com ou sem pontuação). "Não sei se é no GAI ou no GPZ" NÃO é."""
+    t = " ".join(re.sub(r"[^\w\s]", " ", (texto or "").lower()).split())
+    return t in _FRASES_NAO_SEI
+
+
+RX_NAO_SEI_FRASE = re.compile(r"\b(n[aã]o|nem) sei\b|\bsei l[aá]\b", re.I)
+
+
+def sem_nao_sei(texto):
+    """O texto sem "não sei" / "sei lá", para buscar gatilhos: o "sei" casava com o gatilho de integração (sistema SEI)."""
+    return RX_NAO_SEI_FRASE.sub(" ", texto or "")
+
+
+def aceita_nao_sei(codigo):
+    return codigo in ACEITA_NAO_SEI
+
+
+def opcoes_fixas(codigo):
+    """Opções das perguntas fixas (roteiro sem IA, slot esquecido, complemento): só o "Não sei informar", quando o item aceita."""
+    return [OPCAO_NAO_SEI] if aceita_nao_sei(codigo) else []
+
+
+def nao_informado(valor):
+    return (valor or "").strip() == NAO_INFORMADO
+
 
 TRIVIAIS = {"ok", "okay", "sim", "s", "certo", "correto", "isso", "isso mesmo", "beleza", "blz", "entendi", "não sei", "nao sei",
             "sei lá", "sei la", "talvez", "?", "-", "x", "a", "teste"}
@@ -64,6 +101,8 @@ def conteudo(valor):
 
 
 def preenchido(tipo, codigo, valor):
+    if nao_informado(valor):
+        return aceita_nao_sei(codigo)
     return len(conteudo(valor)) >= minimo(tipo, codigo)
 
 
@@ -93,6 +132,34 @@ def faltando(segmentos):
             for s in segmentos for x in s.slots if x.obrigatorio and not x.preenchido]
 
 
+def nao_informados(segmentos):
+    """Itens respondidos com "Não sei" (1.4.0): vão para as dúvidas do contrato e não contam na nota."""
+    return [SlotFaltando(segmento=s.n, slot=x.codigo, rotulo=x.rotulo)
+            for s in segmentos for x in s.slots if nao_informado(x.valor)]
+
+
+def duvidas_nao_informado(segmentos):
+    """Dúvidas determinísticas do contrato para os itens "Não sei"."""
+    return [f"Não informado: {f.rotulo} (segmento {f.segmento})" for f in nao_informados(segmentos)]
+
+
+def resposta_no_slot(codigo, atual, texto):
+    """Valor do slot depois de uma resposta. "Não sei" num item que aceita vira NAO_INFORMADO (substitui o que havia de
+    trivial); num item que bloqueia, junta como qualquer resposta (e continua não contando: "não sei" é trivial)."""
+    if e_nao_sei(texto) and aceita_nao_sei(codigo):
+        return NAO_INFORMADO
+    if nao_informado(atual):
+        return texto
+    return f"{atual}; {texto}" if atual else texto
+
+
+def fracao_preenchida(segmentos):
+    """Para a nota do medidor: itens preenchidos de verdade ("Não sei" não conta) / total."""
+    tot = sum(len(s.slots) for s in segmentos)
+    cheio = sum(x.preenchido and not nao_informado(x.valor) for s in segmentos for x in s.slots)
+    return cheio / max(tot, 1)
+
+
 CRITERIO_CORRETIVO = "Ao repetir os passos informados, a operação é concluída sem o erro relatado."
 CRITERIO_INDEFINIDO = "Definir com o usuário."
 
@@ -103,7 +170,7 @@ def criterio_fixo(tipo, valores):
     if TipoSegmento(tipo) == TipoSegmento.CORRETIVO:
         return CRITERIO_CORRETIVO
     ex = (valores.get("exemplo_concreto") or "").strip()
-    return f"Conferir com o exemplo: {ex}" if ex else CRITERIO_INDEFINIDO
+    return f"Conferir com o exemplo: {ex}" if ex and not nao_informado(ex) else CRITERIO_INDEFINIDO
 
 
 def perguntas_complemento(segmentos, n):
@@ -112,7 +179,7 @@ def perguntas_complemento(segmentos, n):
     out = []
     for i, f in enumerate(faltando(segmentos)[:MAX_PERGUNTAS_COMPLEMENTO], 1):
         texto, dica = PERGUNTA_SLOT[f.slot]
-        out.append(dict(id=f"c{n}p{i}", segmento=f.segmento, slot=f.slot, texto=texto, dica=dica))
+        out.append(dict(id=f"c{n}p{i}", segmento=f.segmento, slot=f.slot, texto=texto, dica=dica, opcoes=opcoes_fixas(f.slot)))
     return out
 
 

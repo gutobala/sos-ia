@@ -32,7 +32,15 @@ REGRA DOCUMENTADA MOSTRADA AO USUÁRIO (se houver):
 6. `integracoes`: cada outro sistema citado, com `sentido` BUSCA (só consulta dados dele), GRAVA (envia ou grava dados nele) ou
    AMBOS, e uma descrição curta. Lista vazia se o usuário disse que não há.
 7. `duvidas`: o que ficou em aberto e a equipe vai precisar confirmar (itens vagos, respostas contraditórias, gatilhos sem resposta
-   clara). Lista vazia se nada ficou em aberto.
+   clara). Lista vazia se nada ficou em aberto. Itens com o valor "Não informado (o usuário não soube responder)" já entram nas
+   dúvidas automaticamente: não repita.
+8. `origem` de cada requisito e de cada integração — diga de onde ele veio, com honestidade:
+   - `usuario`: o usuário pediu isso, com estas ou outras palavras, no relato ou numa resposta;
+   - `documentacao`: vem da regra documentada mostrada acima (por exemplo, o usuário quer mudar o que ela diz);
+   - `inferido`: é uma hipótese sua sobre como resolver ou sobre o que mais seria afetado, que o usuário NÃO disse (ex.: "criar uma
+     nova rubrica", "alterar a rotina de fechamento", "incluir também no relatório X"). O usuário vai ver o item destacado e
+     confirmar ou remover. Prefira não incluir hipóteses; quando incluir, marque `inferido`. Na dúvida entre `usuario` e
+     `inferido`, use `inferido`.
 
 ## Saída
 

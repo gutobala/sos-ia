@@ -196,6 +196,44 @@ def test_criterio_fixo_e_informacoes_do_pedido_no_texto():
     assert k["requisitos"][0]["criterio_aceite"] == "Conferir com o exemplo: Contrato 9: desconto de 10% e não 5%"
 
 
+# ---------------------------------------------------------------- abertura guiada (1.4.0)
+def test_nao_sei_informar_encerra_e_vira_duvida():
+    e = nova("Ao salvar a alienação aparece HTTP 500 e nada é gravado.")
+    op = {p["slot"]: p["opcoes"] for p in e["perguntas"]}
+    assert op["desde_quando_quem"] == ["Não sei informar"] and op["como_reproduzir"] == ["Não sei informar"]
+    assert op["onde_ocorre"] == []                                               # bloqueante
+    e = responde(e, {"onde_ocorre": "Tela de alienação, botão Salvar", "como_reproduzir": "Não sei informar",
+                     "desde_quando_quem": "não sei"})
+    assert e["pronto"] and not e["complemento"] and e["nota"] < 100
+    k = valida("Contrato", c.post(f"/entrevistas/{e['id']}/contrato", headers=H).json())
+    assert k["pode_confirmar"] and len([d for d in k["duvidas"] if d.startswith("Não informado:")]) == 2
+
+
+def test_nao_sei_em_item_bloqueante_vai_para_o_complemento():
+    e = nova("Ao salvar a alienação aparece HTTP 500 e nada é gravado.")
+    e = responde(responde(e, {"onde_ocorre": "não sei", "como_reproduzir": "1) abrir; 2) salvar a alienação",
+                              "desde_quando_quem": "Desde ontem, todos"}), "não sei")
+    assert e["complemento"] and [p["slot"] for p in e["perguntas"]] == ["onde_ocorre"]
+
+
+def test_inferido_e_candidatos_confirmados_no_mock():
+    e = nova("Quero mudar o cálculo do desconto da venda direta.", intencao="MUDAR_EXISTENTE")
+    assert [c["id"] for c in e["candidatos_funcionalidade"]] == [9001, 9002]
+    e = responde(e, {"funcionalidade": "Venda direta, cálculo do desconto", "exemplo_concreto": "Não sei informar",
+                     "fora_de_escopo": "nada", "outros_sistemas": "não", "o_que_muda": "desconto passa a ser de 10%"})
+    k = valida("Contrato", c.post(f"/entrevistas/{e['id']}/contrato", headers=H).json())
+    inf = [r for r in k["requisitos"] if r["origem"] == "inferido"]
+    assert len(inf) == 1 and k["pode_confirmar"]
+    corpo = escopo_de(k, candidatos_confirmados=[9002])
+    for r, rk in zip(corpo["requisitos"], k["requisitos"]):
+        r["n_contrato"] = rk["n"]
+    assert confirma(k["id"], dict(corpo, candidatos_confirmados=[1])).status_code == 422
+    g = valida("EscopoConfirmado", confirma(k["id"], corpo).json())
+    assert [f["id"] for f in g["funcionalidades"]] == [9002]
+    t = g["grupos"][0]["texto"]
+    assert "FUNCIONALIDADES INDICADAS PELO USUÁRIO" in t and "(sugerido pela análise e confirmado pelo usuário)" in t
+
+
 # ---------------------------------------------------------------- confirmação (1.2.0)
 def pronta(relato, intencao="PAROU_DE_FUNCIONAR"):
     """Entrevista respondida até o fim e com o contrato gerado e confirmável."""

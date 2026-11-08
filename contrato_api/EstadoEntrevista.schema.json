@@ -3,6 +3,19 @@
     "CandidatoFuncionalidade": {
       "additionalProperties": false,
       "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "id da função no catálogo; é o que vai em EscopoEditado.candidatos_confirmados",
+          "title": "Id"
+        },
         "nome": {
           "title": "Nome",
           "type": "string"
@@ -95,6 +108,15 @@
           ],
           "default": null,
           "title": "Dica"
+        },
+        "opcoes": {
+          "description": "respostas rápidas (botões); o texto livre continua valendo e a opção escolhida vai em Resposta.texto. \"Não sei informar\" só vem nos itens que aceitam essa resposta",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Opcoes",
+          "type": "array"
         }
       },
       "required": [
@@ -240,7 +262,7 @@
       "type": "string"
     },
     "versao_contrato": {
-      "default": "1.3.2",
+      "default": "1.4.0",
       "title": "Versao Contrato",
       "type": "string"
     },
@@ -338,5 +360,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/EstadoEntrevista.schema.json",
-  "x-versao-contrato": "1.3.2"
+  "x-versao-contrato": "1.4.0"
 }

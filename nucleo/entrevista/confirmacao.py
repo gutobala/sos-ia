@@ -6,8 +6,8 @@
   2. O SOS grava os chamados no Oracle (e o TS_PACOTE quando são 2).
   3. POST /confirmacao/chamados: o SOS informa os CD_SOLICITACAO. Idempotente; a entrevista fica CONFIRMADA.
 """
-from .modelos import (DecisaoRegra, EscopoEditado, GrupoChamado, Natureza, RequisitoEscopo, TipoRequisito, TipoSegmento,
-                      VinculoChamados)
+from .modelos import (DecisaoRegra, EscopoEditado, GrupoChamado, Natureza, Origem, RequisitoEscopo,
+                      TipoRequisito, TipoSegmento, VinculoChamados)
 
 
 class ConfirmacaoInvalida(Exception):
@@ -45,9 +45,11 @@ def verifica_confirmavel(contrato):
         raise ConfirmacaoInvalida(f"o Escopo do Pedido ainda não pode ser confirmado. Falta: {itens}")
 
 
-def monta_grupos(contrato, escopo: EscopoEditado):
-    """Grupos (chamados) do escopo editado. O tipo vem do segmento; segmento inexistente é erro."""
+def monta_grupos(contrato, escopo: EscopoEditado, funcionalidades=()):
+    """Grupos (chamados) do escopo editado. O tipo vem do segmento; segmento inexistente é erro. A origem de um requisito que
+    veio do contrato (`n_contrato`) é a do contrato, não a da tela. `funcionalidades`: as confirmadas (funcionalidades_confirmadas)."""
     segs = {s.n: s for s in contrato.segmentos}
+    origem_contrato = {r.n: r.origem for r in contrato.requisitos}
     reqs = []
     for i, r in enumerate(escopo.requisitos, 1):
         s = segs.get(r.segmento)
@@ -56,7 +58,8 @@ def monta_grupos(contrato, escopo: EscopoEditado):
         if not r.descricao.strip():
             raise EscopoInvalido(f"requisito {i}: descrição vazia")
         reqs.append(RequisitoEscopo(n=i, tipo=tipo_requisito(s.tipo), natureza=NATUREZA[TipoSegmento(s.tipo)], segmento=s.n,
-                                    descricao=r.descricao.strip(), criterio_aceite=r.criterio_aceite.strip() or "Definir com o usuário."))
+                                    descricao=r.descricao.strip(), criterio_aceite=r.criterio_aceite.strip() or "Definir com o usuário.",
+                                    origem=origem_contrato.get(r.n_contrato, r.origem)))
     tipos = [t for t in ORDEM if any(r.tipo == t for r in reqs)]
     regra = regra_aceita(contrato)
     grupos = []
@@ -65,8 +68,27 @@ def monta_grupos(contrato, escopo: EscopoEditado):
         outros = [r for r in reqs if r.tipo != t]
         segs_grupo = [s for s in contrato.segmentos if tipo_requisito(s.tipo) == t]
         grupos.append(GrupoChamado(tipo=t, titulo=titulo(escopo.titulo, t, len(tipos)), requisitos=meus,
-                                   texto=texto(t, escopo, meus, outros, regra, segs_grupo)))
+                                   texto=texto(t, escopo, meus, outros, regra, segs_grupo, funcionalidades)))
     return grupos
+
+
+def funcionalidades_confirmadas(escopo: EscopoEditado, candidatos):
+    """As funcionalidades que o usuário marcou (1.4.0), na ordem em que foram mostradas. `candidatos`: CandidatoFuncionalidade
+    mostrados nesta entrevista. Id que não foi mostrado é erro (o SOS não pode inventar função)."""
+    mostrados = {c.id: c for c in candidatos if c.id is not None}
+    ids = list(dict.fromkeys(escopo.candidatos_confirmados))
+    fora = [i for i in ids if i not in mostrados]
+    if fora:
+        raise EscopoInvalido(f"candidatos_confirmados: {fora} não estão entre as funcionalidades mostradas nesta entrevista")
+    return [mostrados[i] for i in mostrados if i in ids]
+
+
+def inferidos(contrato, escopo: EscopoEditado):
+    """Decisão do usuário sobre os requisitos `inferido` do contrato: os que voltaram na tela (por `n_contrato`) foram
+    confirmados; os que não voltaram, removidos. Vai no evento `inferidos`."""
+    inf = {r.n for r in contrato.requisitos if r.origem == Origem.INFERIDO}
+    voltaram = {r.n_contrato for r in escopo.requisitos if r.n_contrato}
+    return dict(confirmados=sorted(inf & voltaram), removidos=sorted(inf - voltaram))
 
 
 MAX_VALOR_INFO = 600          # por item: o SOS corta o texto em ~3.900 bytes e os requisitos não podem ficar de fora
@@ -121,19 +143,27 @@ def frase_outro_chamado(nome_tipo, numeros):
     return f"Os requisitos {', '.join(ns[:-1])} e {ns[-1]} deste pedido estão no chamado {nome_tipo} vinculado (mesmo pacote)."
 
 
-def texto(tipo, escopo, reqs, outros, regra=None, segmentos=()):
+MARCA_INFERIDO = " (sugerido pela análise e confirmado pelo usuário)"
+
+
+def texto(tipo, escopo, reqs, outros, regra=None, segmentos=(), funcionalidades=()):
     """Texto corrido para o DS_SOLICITACAO. O que mais importa vem primeiro: o SOS corta em ~3900 bytes.
-    `segmentos`: os do grupo, para a seção INFORMAÇÕES DO PEDIDO (respostas da entrevista)."""
+    `segmentos`: os do grupo, para a seção INFORMAÇÕES DO PEDIDO (respostas da entrevista). `funcionalidades`: as que o usuário
+    marcou entre os candidatos (vão nos dois chamados: os candidatos não são por segmento)."""
     L = ["OBJETIVO", escopo.objetivo.strip(), ""]
     info = informacoes(list(segmentos))
     if info:
         L += ["INFORMAÇÕES DO PEDIDO"] + info + [""]
+    if funcionalidades:
+        L += ["FUNCIONALIDADES INDICADAS PELO USUÁRIO"]
+        L += [f"- {f.nome}" + (f" ({f.tipo_ifpug})" if f.tipo_ifpug else "") for f in funcionalidades] + [""]
     for nome, nat in SECOES[tipo]:
         rs = [r for r in reqs if r.natureza == nat]
         if rs:
             L.append(nome)
             for r in rs:
-                L += [f"{r.n}. {r.descricao}", f"   Critério de aceite: {r.criterio_aceite}"]
+                marca = MARCA_INFERIDO if r.origem == Origem.INFERIDO else ""
+                L += [f"{r.n}. {r.descricao}{marca}", f"   Critério de aceite: {r.criterio_aceite}"]
             L.append("")
     if outros:
         L += [frase_outro_chamado(NOME_TIPO[outros[0].tipo], [r.n for r in outros]), ""]

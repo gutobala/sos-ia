@@ -1,9 +1,13 @@
-# sos-ia → sessão do SOS: o que mudou e o que o SOS precisa fazer (06/11/2026)
+# sos-ia → sessão do SOS: o que mudou e o que o SOS precisa fazer (08/11/2026)
 
 O serviço sos-ia (núcleo da abertura de chamados com IA) está pronto para a integração. O motor real da entrevista funciona de
-ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.3.2** (aditivo sobre a 1.2.0:
-nenhum campo ou rota existente mudou de significado). Os JSON Schemas de cada endpoint ficam em `contrato_api/`, com o
-`openapi.json`.
+ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.4.0** (aditivo: nenhum campo ou
+rota existente mudou de significado, e os campos novos de entrada são opcionais). Os JSON Schemas de cada endpoint ficam em
+`contrato_api/`, com o `openapi.json`.
+
+**Novo na 1.4.0 (seção 4.7):** "Não sei" aceito em alguns itens, opções de resposta nas perguntas, origem de cada requisito
+(o `inferido` o usuário confirma ou remove) e funcionalidades afetadas marcadas pelo usuário. A tela atual continua funcionando
+sem mudança; o SOS adota os campos novos quando puder.
 
 **Correção 1.3.2 (o SOS não muda nada):** a frase que aponta o outro chamado do pacote agora concorda em número: "O requisito 2
 deste pedido está no chamado evolutivo vinculado" / "Os requisitos 2 e 3 … estão". A outra parte do pedido 1.3.2 (regra
@@ -174,6 +178,72 @@ Bastava um "ok" num item obrigatório para o usuário só ter a opção de recom
 **O que muda na tela:** com `complemento=true`, troque o título das perguntas por "Para concluir, faltam estas informações" (em
 vez de "rodada X de 2"), e o aviso do Escopo do Pedido sobre item faltando deixa de mandar recomeçar. Nada muda no proxy.
 
+### 4.7 Abertura guiada (novo na 1.4.0) — `novaAbertura.asp` e `confirmarAbertura.asp`
+Nada muda nas rotas nem no proxy. Os campos novos de entrada são opcionais: sem eles, o serviço se comporta como na 1.3.2.
+
+**a) "Não sei".** Alguns itens aceitam "Não sei" e deixam de prender o usuário no complemento:
+
+| Item | Aceita "Não sei"? |
+|---|---|
+| Corretivo: onde ocorre, o que aconteceu | **não** (bloqueia a abertura) |
+| Corretivo: como reproduzir, desde quando/quem | sim |
+| Evolutivo existente: funcionalidade, o que muda | **não** |
+| Evolutivo novo: quem usa, o que guarda, o que faz | **não** |
+| Exemplo, fora do escopo, outros sistemas (evolutivos) | sim |
+
+- Resposta "Não sei" (ou "não sei informar", "sei lá", "não lembro") num item que aceita: o item fica com o valor
+  `"Não informado (o usuário não soube responder)"`, conta como respondido, não é perguntado de novo e vira uma dúvida no Escopo do
+  Pedido ("Não informado: Desde quando e quem é afetado (segmento 1)"). A nota do medidor cai.
+- Num item que bloqueia, "Não sei" continua não valendo: a pergunta volta (no complemento, se for o caso).
+
+**b) Opções de resposta (`Pergunta.opcoes`).** Lista de 0 a 5 textos curtos; mostre como botões, mantendo o campo de texto livre.
+A opção clicada vai como texto em `Resposta.texto`, no mesmo `POST /respostas`. `"Não sei informar"` só vem nos itens que aceitam
+(e nunca nas perguntas de gatilho). Lista vazia = só texto livre.
+```json
+{ "id": "r1p2", "segmento": 1, "slot": "desde_quando_quem", "texto": "Desde quando isso acontece e quem é afetado?",
+  "dica": "Só você, sua área ou todos?", "opcoes": ["Desde ontem", "Há mais de uma semana", "Só comigo", "Toda a área", "Não sei informar"] }
+```
+
+**c) Origem de cada requisito (`origem`: `usuario` | `documentacao` | `inferido`).** Vem em `Contrato.requisitos[]` e
+`Contrato.integracoes[]`. `inferido` é uma hipótese da análise que o usuário não disse (ex.: "criar uma nova rubrica"): mostre
+destacado ("Sugerido pela análise — confirme ou remova"). Na confirmação, mande de volta em cada requisito o `n_contrato` (o `n` do
+requisito do contrato de onde ele veio; nulo se o usuário criou na tela) e a `origem`. Requisito `inferido` que não voltar foi
+removido pelo usuário; o que voltar sai no chamado com "(sugerido pela análise e confirmado pelo usuário)". A origem final é sempre
+a do contrato (o serviço confere pelo `n_contrato`).
+```json
+"requisitos": [
+  { "n": 1, "tipo": "EVOLUTIVO", "segmento": 1, "origem": "usuario",
+    "descricao": "O sistema deve limitar o reembolso de línguas a R$ 250 por mês.", "criterio_aceite": "..." },
+  { "n": 2, "tipo": "EVOLUTIVO", "segmento": 1, "origem": "inferido",
+    "descricao": "O sistema deve criar uma rubrica para o reembolso na folha.", "criterio_aceite": "..." } ]
+```
+
+**d) Funcionalidades afetadas (`candidatos_confirmados`).** `candidatos_funcionalidade[]` agora traz `id`. Mostre os candidatos com
+caixa de marcar ("Quais destas funcionalidades o pedido envolve?") e mande os ids marcados na confirmação. Id que não estava entre
+os mostrados → 422. As marcadas voltam em `EscopoConfirmado.funcionalidades` e saem no texto dos chamados (nos dois, quando há 2),
+na seção "FUNCIONALIDADES INDICADAS PELO USUÁRIO", logo depois de INFORMAÇÕES DO PEDIDO. Nenhuma marcada é válido.
+
+Entrada do `POST /confirmacao` com os campos novos:
+```json
+{ "titulo": "Limite de reembolso de línguas", "objetivo": "...", "cd_usuario": 123,
+  "requisitos": [ { "segmento": 1, "n_contrato": 1, "origem": "usuario", "descricao": "...", "criterio_aceite": "..." },
+                  { "segmento": 1, "n_contrato": null, "descricao": "Pedido acrescentado pelo usuário na tela." } ],
+  "candidatos_confirmados": [4101],
+  "fora_escopo": [], "duvidas": [], "integracoes": [] }
+```
+Saída (`EscopoConfirmado`), além do que já vinha:
+```json
+"funcionalidades": [ { "id": 4101, "nome": "REEMBOLSO DE LINGUAS CALCULAR", "tipo_ifpug": "EE", "similaridade": 0.62 } ]
+```
+
+**Avisos (sem mudança agora):**
+- Regra documentada: a distinção "a regra explica o comportamento" × "o sistema descumpre a regra" ainda não está resolvida; o
+  laboratório vai testar um campo `regra_documentada_relacao`. Até lá, a tela segue como está (aceita/recusa).
+- Roteiro SISP 3.0 (Portaria SGD/MGI nº 3.656, junho/2026): vale preferencialmente para contratações novas. O contrato vigente da
+  Terracap é anterior; o estimador segue a versão citada no contrato de cada demanda.
+- Correção junto: "não sei" no relato ou numa resposta disparava a pergunta de integração com o **SEI** (o "sei" de "não sei").
+  Não dispara mais.
+
 ## 5. Regras do fluxo (determinísticas, não dependem do LLM)
 - No máximo **2 rodadas** de perguntas do LLM e **5 perguntas** por rodada. `pronto=true` → chamar `/contrato`.
 - Depois das 2 rodadas, se ainda faltar item obrigatório: rodadas de complemento até completar (4.6). `pronto=true` só quando não
@@ -196,7 +266,9 @@ O mock reage a palavras do relato:
 - "também", "além disso" ou "aproveitando" → 2 segmentos;
 - Benner, SEI, banco, Receita, arquivo, planilha ou e-mail → pergunta de gatilho;
 - "não permite", "não deixa" ou "bloque…" num `PAROU_DE_FUNCIONAR` → regra documentada de exemplo, e o `/regra` funciona como no real;
-- `MUDAR_EXISTENTE` → 2 candidatos de exemplo.
+- `MUDAR_EXISTENTE` → 2 candidatos de exemplo (ids 9001 e 9002, para testar `candidatos_confirmados`);
+- "cálculo" / "calcular" no relato → o contrato ganha um requisito `inferido` de exemplo, para testar confirmar/remover;
+- "Não sei informar" vem como opção nos itens que aceitam, e funciona como no real (4.7).
 - A confirmação (4.5) segue as mesmas regras do motor real, em memória: um relato misto ("… e também …") gera 2 grupos.
 - O complemento (4.6) também: responda "ok" nas 2 rodadas para ver `complemento=true`.
 

@@ -24,6 +24,10 @@
         "descricao": {
           "title": "Descricao",
           "type": "string"
+        },
+        "origem": {
+          "$ref": "#/$defs/Origem",
+          "default": "usuario"
         }
       },
       "required": [
@@ -33,6 +37,16 @@
       ],
       "title": "Integracao",
       "type": "object"
+    },
+    "Origem": {
+      "description": "De onde veio um item do Escopo do Pedido (1.4.0). Só `usuario` é pedido dele; `inferido` é hipótese da análise, que o\nusuário confirma ou remove na tela, e que o estimador mostra à parte (não infla a contagem).",
+      "enum": [
+        "usuario",
+        "documentacao",
+        "inferido"
+      ],
+      "title": "Origem",
+      "type": "string"
     },
     "RegraDocumentada": {
       "additionalProperties": false,
@@ -98,6 +112,11 @@
         "criterio_aceite": {
           "title": "Criterio Aceite",
           "type": "string"
+        },
+        "origem": {
+          "$ref": "#/$defs/Origem",
+          "default": "usuario",
+          "description": "inferido = hipótese da análise: mostrar destacado para o usuário confirmar ou remover"
         }
       },
       "required": [
@@ -235,7 +254,7 @@
       "type": "string"
     },
     "versao_contrato": {
-      "default": "1.3.2",
+      "default": "1.4.0",
       "title": "Versao Contrato",
       "type": "string"
     },
@@ -348,5 +367,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/Contrato.schema.json",
-  "x-versao-contrato": "1.3.2"
+  "x-versao-contrato": "1.4.0"
 }

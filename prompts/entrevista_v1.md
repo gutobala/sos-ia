@@ -91,7 +91,12 @@ sugerida ao contexto). Se a lista estiver vazia, não faça perguntas de gatilho
   depois os outros segmentos.
 - Uma pergunta por item vazio; o campo `slot` é o código do item (ou "gatilho"); `segmento` é o número do segmento.
 - Linguagem simples, curta, sem jargão. Use `dica` para um exemplo de resposta (ou "").
-- Não pergunte o que o usuário já respondeu. Se todos os itens estão preenchidos e não há gatilho pendente, não pergunte nada.
+- `opcoes`: quando a resposta cabe em poucas alternativas (sim/não com detalhe, só consultar × também gravar, todos × alguns
+  usuários, quando começou), ofereça de 2 a 4 respostas curtas (até 60 caracteres), nas palavras do usuário. Não inclua
+  "Não sei" (o sistema acrescenta quando cabe). Se a resposta precisa ser descrita (mensagem de erro, passo a passo, exemplo com
+  valores), use lista vazia. O usuário sempre pode escrever outra resposta.
+- Não pergunte o que o usuário já respondeu. Um item com o valor "Não informado (o usuário não soube responder)" já foi
+  respondido: não pergunte de novo. Se todos os itens estão preenchidos e não há gatilho pendente, não pergunte nada.
 
 ## Nota e dicas do medidor
 

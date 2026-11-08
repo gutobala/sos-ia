@@ -324,6 +324,93 @@ def test_trecho_riscado_nao_chega_ao_prompt(ambiente, monkeypatch):
     assert M.riscado(dict(secao="RN1", texto="~~")) is False and M.sem_riscados([]) == []
 
 
+CHEIO_MENOS_DESDE = {"onde_ocorre": "Tela de contratos, botão Salvar", "o_que_aconteceu": "Aparece a mensagem HTTP 500 e nada é gravado",
+                     "como_reproduzir": "1) abrir o contrato 123; 2) clicar em Salvar"}
+CONTRATO_LLM = dict(titulo="Erro ao salvar contrato", objetivo="Voltar a salvar contratos.",
+                    requisitos=[dict(segmento=1, tipo="CORRETIVO", descricao="O sistema deve salvar o contrato sem erro 500.",
+                                     criterio_aceite="Salvar o contrato 123 sem erro.", origem="usuario"),
+                                dict(segmento=1, tipo="CORRETIVO", descricao="O sistema deve registrar o erro em log.",
+                                     criterio_aceite="Definir.", origem="inferido")],
+                    fora_escopo=[], duvidas=[], integracoes=[])
+
+
+def test_nao_sei_em_item_opcional_encerra_sem_llm_e_vira_duvida(ambiente):
+    from nucleo.entrevista import roteiros
+    mot, usa = ambiente
+    f = usa(resp_entrevista(slots=CHEIO_MENOS_DESDE, nota=90), CONTRATO_LLM)
+    e = mot.criar(nova())
+    (p,) = e.perguntas
+    assert p.slot == "desde_quando_quem" and p.opcoes == ["Não sei informar"]       # pergunta fixa, com o "Não sei"
+    e2 = mot.responder(e.id, Respostas(respostas=[Resposta(id=p.id, texto="Não sei informar")]))
+    s = {x.codigo: x for x in e2.segmentos[0].slots}
+    assert e2.pronto and not e2.complemento and len(f.prompts) == 1                 # encerrou sem nova chamada ao LLM
+    assert s["desde_quando_quem"].valor == roteiros.NAO_INFORMADO and s["desde_quando_quem"].preenchido
+    assert e2.nota < e.nota                                                        # "Não sei" não conta como preenchido (3 de 4)
+    k = mot.contrato(e.id)
+    assert k.pode_confirmar and "Não informado: Desde quando e quem é afetado (segmento 1)" in k.duvidas
+    assert [r.origem.value for r in k.requisitos] == ["usuario", "inferido"]
+
+
+def test_nao_sei_nao_dispara_o_gatilho_do_sei():
+    assert M.detecta_gatilhos("Deu erro quando fui salvar, nao sei o que houve.") == []
+    assert M.detecta_gatilhos("Não sei informar") == [] and M.detecta_gatilhos("sei lá") == []
+    assert M.detecta_gatilhos("O processo vem do SEI e não sei o número") == ["integracao"]
+
+
+def test_nao_sei_em_item_bloqueante_continua_pedindo(ambiente):
+    mot, usa = ambiente
+    slots = dict(CHEIO_MENOS_DESDE, desde_quando_quem="Desde ontem, todos os usuários")
+    slots.pop("onde_ocorre")
+    usa(resp_entrevista(slots=slots), resp_entrevista(slots=slots))
+    e = mot.criar(nova())
+    (p,) = e.perguntas
+    assert p.slot == "onde_ocorre" and p.opcoes == []                               # bloqueante: sem "Não sei informar"
+    e2 = mot.responder(e.id, Respostas(respostas=[Resposta(id=p.id, texto="Não sei")]))
+    assert not e2.pronto and [x.slot for x in e2.perguntas] == ["onde_ocorre"]
+    assert not {x.codigo: x for x in e2.segmentos[0].slots}["onde_ocorre"].preenchido
+
+
+def test_opcoes_da_ia_limpas_e_nao_sei_so_onde_cabe(ambiente):
+    mot, usa = ambiente
+    r = resp_entrevista(slots={"onde_ocorre": "Tela de contratos, botão Salvar"},
+                        perguntas=[(1, "desde_quando_quem", "Desde quando?"), (1, "como_reproduzir", "Quais passos?"),
+                                   (1, "o_que_aconteceu", "O que aparece?")])
+    r["perguntas"][0]["opcoes"] = ["Desde ontem", "desde ontem", "  Há mais de   um mês ", "Não sei", "x" * 100, "Só comigo",
+                                   "Toda a área", "Sobrando"]
+    r["perguntas"][1]["opcoes"] = []
+    r["perguntas"][2]["opcoes"] = ["Mensagem de erro", "Tela em branco"]
+    usa(r)
+    op = {p.slot: p.opcoes for p in mot.criar(nova()).perguntas}
+    assert op["desde_quando_quem"] == ["Desde ontem", "Há mais de um mês", "Só comigo", "Toda a área", "Não sei informar"]
+    assert op["como_reproduzir"] == ["Não sei informar"]
+    assert op["o_que_aconteceu"] == ["Mensagem de erro", "Tela em branco"]          # bloqueante: sem "Não sei"
+
+
+def test_confirmacao_com_inferido_removido_e_funcionalidade_confirmada(ambiente, monkeypatch):
+    from nucleo.entrevista import confirmacao as cf
+    from nucleo.entrevista.modelos import EscopoEditado
+    cands = [dict(id=4101, nome="CONTRATO - ALTERAR", tipo_ifpug="EE", modulo="Contratos", similaridade=0.6),
+             dict(id=4102, nome="CONTRATO - CONSULTAR", tipo_ifpug="CE", modulo="Contratos", similaridade=0.5)]
+    monkeypatch.setattr(M, "rag", lambda conn, intencao, sid, wiki, texto: ([dict(d) for d in DOCS], [dict(c) for c in cands]))
+    mot, usa = ambiente
+    usa(resp_entrevista(slots=dict(CHEIO_MENOS_DESDE, desde_quando_quem="Desde ontem, todos")), CONTRATO_LLM)
+    e = mot.criar(nova())
+    assert [c.id for c in e.candidatos_funcionalidade] == [4101, 4102]
+    k = mot.contrato(e.id)
+    base = dict(titulo=k.titulo, objetivo=k.objetivo, cd_usuario=7,
+                requisitos=[dict(segmento=1, descricao=k.requisitos[0].descricao, n_contrato=1)])   # o inferido (n=2) foi removido
+    with pytest.raises(cf.EscopoInvalido):
+        mot.confirmacao(e.id, EscopoEditado(**base, candidatos_confirmados=[999]))
+    conf = mot.confirmacao(e.id, EscopoEditado(**base, candidatos_confirmados=[4101]))
+    assert [f.nome for f in conf.funcionalidades] == ["CONTRATO - ALTERAR"]
+    assert "FUNCIONALIDADES INDICADAS PELO USUÁRIO\n- CONTRATO - ALTERAR (EE)" in conf.grupos[0].texto
+    with db.db_app() as c:
+        v1 = c.execute("SELECT conteudo FROM app.entrevista_escopo WHERE entrevista_id = %s AND versao = 1", (e.id,)).fetchone()
+        ev = c.execute("SELECT conteudo FROM app.entrevista_evento WHERE entrevista_id = %s AND tipo = 'inferidos'", (e.id,)).fetchone()
+    assert v1["conteudo"]["candidatos_confirmados"] == [dict(id=4101, nome="CONTRATO - ALTERAR", tipo_ifpug="EE")]
+    assert ev["conteudo"] == dict(confirmados=[], removidos=[2])
+
+
 def test_id_inexistente(ambiente):
     mot, _ = ambiente
     with pytest.raises(KeyError):

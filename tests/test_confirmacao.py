@@ -103,6 +103,34 @@ def test_criterio_fixo_nunca_e_como_reproduzir():
     assert roteiros.criterio_fixo("EVOLUTIVO_EXISTENTE", {"exemplo_concreto": None}) == "Definir com o usuário."
 
 
+def test_origem_inferidos_e_funcionalidades_confirmadas():
+    """1.4.0: origem vem do contrato (não da tela); inferido mantido ganha marca; removido vai para o evento; funções marcadas
+    entram nos dois chamados; id fora dos mostrados é erro."""
+    from nucleo.entrevista.modelos import CandidatoFuncionalidade, RequisitoContrato
+    k = contrato("CORRETIVO", "EVOLUTIVO_EXISTENTE").model_copy(update={"requisitos": [
+        RequisitoContrato(n=1, tipo="CORRETIVO", segmento=1, descricao="a", criterio_aceite="c"),
+        RequisitoContrato(n=2, tipo="EVOLUTIVO", segmento=2, descricao="criar rubrica", criterio_aceite="c", origem="inferido"),
+        RequisitoContrato(n=3, tipo="EVOLUTIVO", segmento=2, descricao="alterar o fechamento", criterio_aceite="c", origem="inferido")]})
+    e = EscopoEditado(titulo="t", objetivo="o", candidatos_confirmados=[7, 5, 7], requisitos=[
+        dict(segmento=1, descricao="corrigir a", n_contrato=1),
+        dict(segmento=2, descricao="criar a rubrica de reembolso", n_contrato=2, origem="usuario"),   # a tela não muda a origem
+        dict(segmento=2, descricao="pedido novo do usuário")])
+    assert cf.inferidos(k, e) == dict(confirmados=[2], removidos=[3])
+    cands = [CandidatoFuncionalidade(id=5, nome="REEMBOLSO CALCULAR", tipo_ifpug="EE", similaridade=0.5),
+             CandidatoFuncionalidade(id=6, nome="X", similaridade=0.4),
+             CandidatoFuncionalidade(id=7, nome="FOLHA FECHAR", similaridade=0.4)]
+    funcs = cf.funcionalidades_confirmadas(e, cands)
+    assert [f.id for f in funcs] == [5, 7]                                        # ordem dos mostrados, sem repetir
+    corr, evol = cf.monta_grupos(k, e, funcs)
+    assert [r.origem.value for r in evol.requisitos] == ["inferido", "usuario"]
+    assert "2. criar a rubrica de reembolso" + cf.MARCA_INFERIDO in evol.texto and "3. pedido novo do usuário\n" in evol.texto
+    for g in (corr, evol):
+        assert "FUNCIONALIDADES INDICADAS PELO USUÁRIO\n- REEMBOLSO CALCULAR (EE)\n- FOLHA FECHAR\n" in g.texto
+    with pytest.raises(cf.EscopoInvalido, match="99"):
+        cf.funcionalidades_confirmadas(e.model_copy(update={"candidatos_confirmados": [5, 99]}), cands)
+    assert "FUNCIONALIDADES INDICADAS" not in cf.monta_grupos(k, e)[0].texto
+
+
 def test_frase_do_outro_chamado_singular_e_plural():
     assert cf.frase_outro_chamado("evolutivo", [2]) == "O requisito 2 deste pedido está no chamado evolutivo vinculado (mesmo pacote)."
     assert cf.frase_outro_chamado("evolutivo", [2, 3]) == \

@@ -109,3 +109,28 @@ def test_slot_com_resposta_trivial_nao_conta():
     assert roteiros.preenchido(ev, "fora_de_escopo", "Nada.")
     assert roteiros.preenchido(ev, "outros_sistemas", "Não")
     assert roteiros.preenchido(ev, "outros_sistemas", "Sim, busca no Benner")
+
+
+def test_nao_sei_so_conta_nos_itens_que_aceitam():
+    """1.4.0: "Não sei" preenche (como NAO_INFORMADO) só os itens não bloqueantes; não conta na nota."""
+    from nucleo.entrevista import roteiros as R
+    from nucleo.entrevista.modelos import Segmento, TipoSegmento as T
+    for t in ("não sei", "Não sei.", "NAO SEI", "Não sei informar", "sei lá!", "não lembro"):
+        assert R.e_nao_sei(t), t
+    for t in ("Não sei se é no GAI ou no GPZ", "", "não", "nada"):
+        assert not R.e_nao_sei(t), t
+    assert R.preenchido(T.CORRETIVO, "desde_quando_quem", R.NAO_INFORMADO)
+    assert R.preenchido(T.CORRETIVO, "como_reproduzir", R.NAO_INFORMADO)
+    assert not R.preenchido(T.CORRETIVO, "onde_ocorre", R.NAO_INFORMADO)          # bloqueante
+    assert not R.preenchido(T.EVOLUTIVO_NOVO, "o_que_faz", R.NAO_INFORMADO)
+    assert R.resposta_no_slot("desde_quando_quem", "ok", "Não sei informar") == R.NAO_INFORMADO
+    assert R.resposta_no_slot("onde_ocorre", "ok", "não sei") == "ok; não sei"     # bloqueante: segue como resposta comum
+    assert R.resposta_no_slot("desde_quando_quem", R.NAO_INFORMADO, "Desde ontem") == "Desde ontem"
+    assert R.opcoes_fixas("exemplo_concreto") == [R.OPCAO_NAO_SEI] and R.opcoes_fixas("o_que_muda") == []
+    assert R.opcoes_fixas("gatilho") == []
+    seg = R.revalida(Segmento(n=1, tipo=T.CORRETIVO, resumo="r", slots=R.slots_vazios(T.CORRETIVO, {
+        "onde_ocorre": "Tela de contratos, botão Salvar", "o_que_aconteceu": "Aparece HTTP 500 e nada é gravado",
+        "como_reproduzir": "1) abrir o contrato; 2) Salvar", "desde_quando_quem": R.NAO_INFORMADO})))
+    assert not R.faltando([seg]) and R.fracao_preenchida([seg]) == 0.75
+    assert R.duvidas_nao_informado([seg]) == ["Não informado: Desde quando e quem é afetado (segmento 1)"]
+    assert R.criterio_fixo(T.EVOLUTIVO_NOVO, {"exemplo_concreto": R.NAO_INFORMADO}) == R.CRITERIO_INDEFINIDO

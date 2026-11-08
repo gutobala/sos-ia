@@ -34,7 +34,7 @@ from . import armazem, confirmacao as cf, roteiros
 from .mock import PERGUNTA_SLOT, SLOT_PRINCIPAL
 from .modelos import (CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra, DecisaoRegraDocumentada,
                       EntrevistaPendente, EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista, Integracao, Intencao,
-                      NovaEntrevista, Pergunta, RegraDocumentada, RequisitoContrato, Respostas, Segmento, TipoRequisito, TipoSegmento,
+                      NovaEntrevista, Origem, Pergunta, RegraDocumentada, RequisitoContrato, Respostas, Segmento, TipoRequisito, TipoSegmento,
                       VersaoEscopo, VinculoChamados)
 
 MAX_RODADAS = 2
@@ -50,6 +50,7 @@ NOME_INTENCAO = {Intencao.PAROU_DE_FUNCIONAR: "Algo parou de funcionar", Intenca
 RETENCAO_DIAS = int(config.env("SOSIA_RETENCAO_DIAS", "0")) or None
 
 _TIPOS = [t.value for t in TipoSegmento]
+_ORIGENS = [o.value for o in Origem]
 SCHEMA_ENTREVISTA = {
     "type": "object", "additionalProperties": False,
     "required": ["segmentos", "perguntas", "regra_documentada_trecho", "regra_documentada_orientacao", "nota", "dicas_medidor"],
@@ -61,9 +62,9 @@ SCHEMA_ENTREVISTA = {
                                                                 "required": ["codigo", "valor"],
                                                                 "properties": {"codigo": {"type": "string"}, "valor": {"type": "string"}}}}}}},
         "perguntas": {"type": "array", "items": {
-            "type": "object", "additionalProperties": False, "required": ["segmento", "slot", "texto", "dica"],
+            "type": "object", "additionalProperties": False, "required": ["segmento", "slot", "texto", "dica", "opcoes"],
             "properties": {"segmento": {"type": "integer"}, "slot": {"type": "string"}, "texto": {"type": "string"},
-                           "dica": {"type": "string"}}}},
+                           "dica": {"type": "string"}, "opcoes": {"type": "array", "items": {"type": "string"}}}}},
         "regra_documentada_trecho": {"type": "integer"},
         "regra_documentada_orientacao": {"type": "string"},
         "nota": {"type": "integer"},
@@ -74,15 +75,18 @@ SCHEMA_CONTRATO = {
     "properties": {
         "titulo": {"type": "string"}, "objetivo": {"type": "string"},
         "requisitos": {"type": "array", "items": {
-            "type": "object", "additionalProperties": False, "required": ["segmento", "tipo", "descricao", "criterio_aceite"],
+            "type": "object", "additionalProperties": False, "required": ["segmento", "tipo", "descricao", "criterio_aceite", "origem"],
             "properties": {"segmento": {"type": "integer"}, "tipo": {"type": "string", "enum": [t.value for t in TipoRequisito]},
-                           "descricao": {"type": "string"}, "criterio_aceite": {"type": "string"}}}},
+                           "descricao": {"type": "string"}, "criterio_aceite": {"type": "string"},
+                           "origem": {"type": "string", "enum": _ORIGENS}}}},
         "fora_escopo": {"type": "array", "items": {"type": "string"}},
         "duvidas": {"type": "array", "items": {"type": "string"}},
         "integracoes": {"type": "array", "items": {
-            "type": "object", "additionalProperties": False, "required": ["sistema", "sentido", "descricao"],
+            "type": "object", "additionalProperties": False, "required": ["sistema", "sentido", "descricao", "origem"],
             "properties": {"sistema": {"type": "string"}, "sentido": {"type": "string", "enum": ["BUSCA", "GRAVA", "AMBOS"]},
-                           "descricao": {"type": "string"}}}}}}
+                           "descricao": {"type": "string"}, "origem": {"type": "string", "enum": _ORIGENS}}}}}}
+MAX_OPCOES = 4          # opções de resposta da IA por pergunta (+ "Não sei informar", posto pela aplicação)
+MAX_CAR_OPCAO = 80
 
 
 # ---------------------------------------------------------------- gatilhos e sistema
@@ -97,7 +101,9 @@ def gatilhos():
 
 
 def detecta_gatilhos(texto):
-    return [g["codigo"] for g in gatilhos() if g["rx"].search(texto or "")]
+    """Gatilhos ocultos no texto. "não sei" / "sei lá" saem antes: o "sei" casava com o gatilho de integração (sistema SEI)."""
+    t = roteiros.sem_nao_sei(texto)
+    return [g["codigo"] for g in gatilhos() if g["rx"].search(t)]
 
 
 def resolve_sistema(conn, sigla):
@@ -257,12 +263,13 @@ def aplica(est, resp, pendentes=()):
             if (gat_ok or p["slot"] in vazios) and chave not in vistos and p["texto"].strip():
                 vistos.add(chave)
                 n_gat += p["slot"] == "gatilho"
-                ps.append(dict(segmento=s.n, slot=p["slot"], texto=p["texto"].strip(), dica=p["dica"].strip() or None))
+                ps.append(dict(segmento=s.n, slot=p["slot"], texto=p["texto"].strip(), dica=p["dica"].strip() or None,
+                               opcoes=opcoes(p.get("opcoes"), p["slot"])))
         cobertos = {(p["segmento"], p["slot"]) for p in ps}
         for f in roteiros.faltando(segs):                   # o LLM esqueceu um slot vazio: pergunta fixa do roteiro
             if (f.segmento, f.slot) not in cobertos:
                 t, d = PERGUNTA_SLOT[f.slot]
-                ps.append(dict(segmento=f.segmento, slot=f.slot, texto=t, dica=d))
+                ps.append(dict(segmento=f.segmento, slot=f.slot, texto=t, dica=d, opcoes=roteiros.opcoes_fixas(f.slot)))
     est["perguntas"] = [dict(p, id=f"r{est['rodada']}p{i}") for i, p in enumerate(ps[:MAX_PERGUNTAS], 1)]
 
     est["nota"] = nota(segs, resp["nota"])
@@ -277,10 +284,22 @@ def tipo_fixo_seg1(est):
     return TipoSegmento.EVOLUTIVO_EXISTENTE if est.get("decisao") == DecisaoRegra.ACEITA.value else TipoSegmento.CORRETIVO
 
 
+def opcoes(da_ia, slot):
+    """Opções de resposta (1.4.0): até 4 da IA, curtas, sem repetir e sem "não sei" (esse quem põe é a aplicação, e só nos itens
+    que aceitam). Pergunta de gatilho nunca ganha "Não sei informar"."""
+    out, vistos = [], set()
+    for o in da_ia or []:
+        o = " ".join(str(o).split())
+        if o and len(o) <= MAX_CAR_OPCAO and o.lower() not in vistos and not roteiros.e_nao_sei(o):
+            vistos.add(o.lower())
+            out.append(o)
+    return out[:MAX_OPCOES] + roteiros.opcoes_fixas(slot)
+
+
 def nota(segs, nota_llm=None):
-    """Média entre a nota do LLM e a fração de slots obrigatórios preenchidos (o medidor não chega a 100 com slot vazio)."""
-    tot = sum(len(s.slots) for s in segs)
-    cheio = round(100 * sum(x.preenchido for s in segs for x in s.slots) / max(tot, 1))
+    """Média entre a nota do LLM e a fração de slots obrigatórios preenchidos (o medidor não chega a 100 com slot vazio; "Não sei"
+    não conta como preenchido)."""
+    cheio = round(100 * roteiros.fracao_preenchida(segs))
     if nota_llm is None:
         return cheio
     return round((max(0, min(100, nota_llm)) + cheio) / 2)
@@ -300,11 +319,11 @@ def roteiro_fixo(est):
     if est["rodada"] <= MAX_RODADAS:
         gat = {g["codigo"]: g for g in gatilhos()}
         pend = _pendentes(est)
-        ps += [dict(segmento=1, slot="gatilho", texto=gat[c]["pergunta"], dica=None) for c in pend[:1]]
+        ps += [dict(segmento=1, slot="gatilho", texto=gat[c]["pergunta"], dica=None, opcoes=[]) for c in pend[:1]]
         est["gatilhos_feitos"] += pend[:1]
         for f in roteiros.faltando(segs):
             t, d = PERGUNTA_SLOT[f.slot]
-            ps.append(dict(segmento=f.segmento, slot=f.slot, texto=t, dica=d))
+            ps.append(dict(segmento=f.segmento, slot=f.slot, texto=t, dica=d, opcoes=roteiros.opcoes_fixas(f.slot)))
     est["perguntas"] = [dict(p, id=f"r{est['rodada']}p{i}") for i, p in enumerate(ps[:MAX_PERGUNTAS], 1)]
     est["nota"] = nota(segs)
     est["dicas"] = [f"Falta: {f.rotulo}" for f in roteiros.faltando(segs)][:3]
@@ -360,11 +379,14 @@ class Motor:
         return [{k: v for k, v in c.items() if k != "texto"} for c in cands[:MAX_CANDIDATOS]]
 
     @staticmethod
-    def _estado(eid, est, analise_ia):
+    def _candidatos(est):
+        return [CandidatoFuncionalidade(id=c.get("id"), nome=c["nome"], tipo_ifpug=c.get("tipo_ifpug"), similaridade=c["similaridade"],
+                                        trecho=c.get("modulo") or None) for c in est["candidatos"]]
+
+    def _estado(self, eid, est, analise_ia):
         return EstadoEntrevista(
             id=eid, rodada=min(est["rodada"], 3), pronto=not est["perguntas"], segmentos=_segs(est),
-            candidatos_funcionalidade=[CandidatoFuncionalidade(nome=c["nome"], tipo_ifpug=c.get("tipo_ifpug"), similaridade=c["similaridade"],
-                                                               trecho=c.get("modulo") or None) for c in est["candidatos"]],
+            candidatos_funcionalidade=self._candidatos(est),
             regra_documentada=RegraDocumentada.model_validate(est["regra"]) if est.get("regra") else None,
             decisao_regra=est.get("decisao"), perguntas=[Pergunta.model_validate(p) for p in est["perguntas"]],
             complemento=bool(est.get("complemento") and est["perguntas"]), nota=est["nota"], dicas_medidor=est["dicas"],
@@ -433,7 +455,7 @@ class Motor:
                     continue
                 for i, s in enumerate(segs):
                     if s.n == p["segmento"]:
-                        sl = [x.model_copy(update={"valor": (f"{x.valor}; {txt}" if x.valor else txt)}) if x.codigo == p["slot"] else x
+                        sl = [x.model_copy(update={"valor": roteiros.resposta_no_slot(x.codigo, x.valor, txt)}) if x.codigo == p["slot"] else x
                               for x in s.slots]
                         segs[i] = roteiros.revalida(s.model_copy(update={"slots": sl}))
             est["segs"] = [s.model_dump(mode="json") for s in segs]
@@ -526,11 +548,14 @@ class Motor:
             est["contrato"] = c
         n_seg = {s.n for s in segs}
         reqs = [RequisitoContrato(n=i, tipo=TipoRequisito(r["tipo"]), segmento=r["segmento"] if r["segmento"] in n_seg else 1,
-                                  descricao=r["descricao"].strip(), criterio_aceite=r["criterio_aceite"].strip() or "Definir com o usuário.")
+                                  descricao=r["descricao"].strip(), criterio_aceite=r["criterio_aceite"].strip() or "Definir com o usuário.",
+                                  origem=r.get("origem") or Origem.USUARIO)
                 for i, r in enumerate(c["requisitos"], 1) if r["descricao"].strip()]
         falt = roteiros.faltando_com_regra(segs, bool(est.get("regra")), est.get("decisao"))
+        duvidas = [x for x in c["duvidas"] if x.strip()]
+        duvidas += [d for d in roteiros.duvidas_nao_informado(segs) if d not in duvidas]   # "Não sei": sempre, não depende do LLM
         return Contrato(id=eid, titulo=c["titulo"].strip()[:200] or f"{est['sigla']} - pedido", objetivo=c["objetivo"].strip(),
-                        requisitos=reqs, fora_escopo=[x for x in c["fora_escopo"] if x.strip()], duvidas=[x for x in c["duvidas"] if x.strip()],
+                        requisitos=reqs, fora_escopo=[x for x in c["fora_escopo"] if x.strip()], duvidas=duvidas,
                         integracoes=[Integracao(**x) for x in c["integracoes"]], segmentos=segs, nota=est["nota"], faltando=falt,
                         regra_documentada=RegraDocumentada.model_validate(est["regra"]) if est.get("regra") else None,
                         decisao_regra=est.get("decisao"),
@@ -556,15 +581,21 @@ class Motor:
             cf.verifica_aberta(row["situacao"])
             k = self._monta_contrato(app, eid, row, est, gerar=False)
             cf.verifica_confirmavel(k)
-            grupos = cf.monta_grupos(k, escopo)
+            funcs = cf.funcionalidades_confirmadas(escopo, self._candidatos(est))
+            grupos = cf.monta_grupos(k, escopo, funcs)
             armazem.grava_escopo(app, eid, 0, 0, None, k.model_dump(mode="json"))
             armazem.grava_escopo(app, eid, 1, 1, escopo.cd_usuario,
-                                 dict(escopo=escopo.model_dump(mode="json"), grupos=[g.model_dump(mode="json") for g in grupos]))
+                                 dict(escopo=escopo.model_dump(mode="json"), grupos=[g.model_dump(mode="json") for g in grupos],
+                                      candidatos_confirmados=[dict(id=f.id, nome=f.nome, tipo_ifpug=f.tipo_ifpug) for f in funcs]))
             armazem.evento(app, eid, est["rodada"], "confirmacao",
-                           conteudo=dict(grupos=[g.tipo.value for g in grupos], requisitos=len(escopo.requisitos)))
+                           conteudo=dict(grupos=[g.tipo.value for g in grupos], requisitos=len(escopo.requisitos),
+                                         candidatos_confirmados=[f.id for f in funcs]))
+            inf = cf.inferidos(k, escopo)
+            if inf["confirmados"] or inf["removidos"]:
+                armazem.evento(app, eid, est["rodada"], "inferidos", conteudo=inf)
             armazem.muda_situacao(app, eid, "PENDENTE")
             app.commit()
-            return EscopoConfirmado(id=eid, situacao="PENDENTE", grupos=grupos, analise_ia=k.analise_ia, nota=k.nota,
+            return EscopoConfirmado(id=eid, situacao="PENDENTE", grupos=grupos, analise_ia=k.analise_ia, nota=k.nota, funcionalidades=funcs,
                                     regra_documentada=cf.regra_aceita(k))
         finally:
             app.close()
@@ -641,9 +672,11 @@ def contrato_fixo(est, segs):
         reqs.append(dict(segmento=s.n, tipo="CORRETIVO" if s.tipo == TipoSegmento.CORRETIVO else "EVOLUTIVO",
                          descricao=(v.get(SLOT_PRINCIPAL[s.tipo]) or s.resumo)[:1000],
                          criterio_aceite=roteiros.criterio_fixo(s.tipo, v)[:1000]))
-        if v.get("fora_de_escopo") and v["fora_de_escopo"].strip().lower() not in ("nada", "não", "nao"):
+        if v.get("fora_de_escopo") and not roteiros.nao_informado(v["fora_de_escopo"]) \
+                and v["fora_de_escopo"].strip().lower() not in ("nada", "não", "nao"):
             fora.append(v["fora_de_escopo"])
-        if v.get("outros_sistemas") and v["outros_sistemas"].strip().lower() not in ("não", "nao", "n"):
+        if v.get("outros_sistemas") and not roteiros.nao_informado(v["outros_sistemas"]) \
+                and v["outros_sistemas"].strip().lower() not in ("não", "nao", "n"):
             integ.append(dict(sistema="(a identificar)", sentido="AMBOS", descricao=v["outros_sistemas"]))
     duv = [f"{r['pergunta']} → {r['resposta']}" for r in est["respostas"] if r["slot"] == "gatilho"]
     return dict(titulo=f"{est['sigla']} - {est['texto'].strip()[:80]}", objetivo=est["texto"].strip()[:300], requisitos=reqs,

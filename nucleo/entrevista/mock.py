@@ -17,7 +17,7 @@ import uuid
 from . import confirmacao as cf, roteiros
 from .modelos import (CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra, DecisaoRegraDocumentada,
                       EntrevistaPendente, EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista, Integracao, Intencao,
-                      NovaEntrevista, Pergunta, RegraDocumentada, RequisitoContrato, Respostas, Segmento, TipoRequisito, TipoSegmento,
+                      NovaEntrevista, Origem, Pergunta, RegraDocumentada, RequisitoContrato, Respostas, Segmento, TipoRequisito, TipoSegmento,
                       VersaoEscopo, VinculoChamados)
 
 
@@ -29,6 +29,7 @@ MAX_PERGUNTAS = 5
 RX_MISTO = re.compile(r"\b(tamb[eé]m|al[eé]m disso|aproveitando)\b", re.I)
 RX_GATILHO = re.compile(r"\b(benner|sei|banco|receita|arquivo|planilha|e-?mail)\b", re.I)
 RX_REGRA = re.compile(r"n[aã]o (permite|deixa)|bloque", re.I)
+RX_CALCULO = re.compile(r"c[aá]lcul", re.I)
 SLOT_PRINCIPAL = {TipoSegmento.CORRETIVO: "o_que_aconteceu", TipoSegmento.EVOLUTIVO_EXISTENTE: "o_que_muda",
                   TipoSegmento.EVOLUTIVO_NOVO: "o_que_faz"}
 PERGUNTA_SLOT = roteiros.PERGUNTA_SLOT      # mantido aqui: o motor importa daqui
@@ -56,20 +57,30 @@ class MotorMock:
 
     def _perguntas(self, st):
         ps = []
-        if st["rodada"] == 1 and RX_GATILHO.search(st["req"].relato):
+        if st["rodada"] == 1 and RX_GATILHO.search(roteiros.sem_nao_sei(st["req"].relato)):
             ps.append(Pergunta(id=f"r1g", segmento=1, slot="gatilho",
                                texto="Você citou outro sistema ou arquivo. Os dados serão só consultados, ou também gravados/enviados?",
-                               dica="Isso costuma mudar bastante o tamanho do trabalho."))
+                               dica="Isso costuma mudar bastante o tamanho do trabalho.",
+                               opcoes=["Só consultados", "Também gravados ou enviados"]))
         for s in st["segs"]:
             for x in s.slots:
                 if not x.preenchido and len(ps) < MAX_PERGUNTAS:
                     texto, dica = PERGUNTA_SLOT[x.codigo]
-                    ps.append(Pergunta(id=f"r{st['rodada']}s{s.n}{x.codigo}", segmento=s.n, slot=x.codigo, texto=texto, dica=dica))
+                    ps.append(Pergunta(id=f"r{st['rodada']}s{s.n}{x.codigo}", segmento=s.n, slot=x.codigo, texto=texto, dica=dica,
+                                       opcoes=roteiros.opcoes_fixas(x.codigo)))
         return ps
 
     def _nota(self, segs):
-        tot = sum(len(s.slots) for s in segs)
-        return round(100 * sum(x.preenchido for s in segs for x in s.slots) / max(tot, 1))
+        return round(100 * roteiros.fracao_preenchida(segs))
+
+    @staticmethod
+    def _candidatos(req):
+        if req.intencao != Intencao.MUDAR_EXISTENTE:
+            return []
+        return [CandidatoFuncionalidade(id=9001, nome=f"{req.sigla} - Consultar Cadastro (exemplo)", tipo_ifpug="CE",
+                                        pagina_wiki=f"sistemas:{req.sigla.lower()}:uc001", trecho="Trecho de exemplo da wiki.",
+                                        similaridade=0.82),
+                CandidatoFuncionalidade(id=9002, nome=f"{req.sigla} - Alterar Cadastro (exemplo)", tipo_ifpug="EE", similaridade=0.79)]
 
     def _resposta(self, eid):
         st = self.estado[eid]
@@ -83,15 +94,8 @@ class MotorMock:
         pronto = not st["perguntas"]
         dicas = [f"Falta: {f.rotulo}" for f in roteiros.faltando(st["segs"])][:3]
         req = st["req"]
-        cand = []
-        if req.intencao == Intencao.MUDAR_EXISTENTE:
-            cand = [CandidatoFuncionalidade(nome=f"{req.sigla} - Consultar Cadastro (exemplo)", tipo_ifpug="CE",
-                                            pagina_wiki=f"sistemas:{req.sigla.lower()}:uc001", trecho="Trecho de exemplo da wiki.",
-                                            similaridade=0.82),
-                    CandidatoFuncionalidade(nome=f"{req.sigla} - Alterar Cadastro (exemplo)", tipo_ifpug="EE",
-                                            similaridade=0.79)]
         return EstadoEntrevista(id=eid, rodada=min(st["rodada"], 3), pronto=pronto, segmentos=st["segs"],
-                                candidatos_funcionalidade=cand, regra_documentada=self._regra(req), decisao_regra=st.get("decisao"),
+                                candidatos_funcionalidade=self._candidatos(req), regra_documentada=self._regra(req), decisao_regra=st.get("decisao"),
                                 perguntas=st["perguntas"], complemento=st["complemento"],
                                 nota=self._nota(st["segs"]), dicas_medidor=dicas, analise_ia=self.analise_ia)
 
@@ -132,7 +136,7 @@ class MotorMock:
     def obter(self, eid) -> EstadoEntrevista:
         st = self.estado[eid]
         return EstadoEntrevista(id=eid, rodada=min(st["rodada"], 3), pronto=not st["perguntas"], segmentos=st["segs"],
-                                regra_documentada=self._regra(st["req"]), decisao_regra=st.get("decisao"),
+                                candidatos_funcionalidade=self._candidatos(st["req"]), regra_documentada=self._regra(st["req"]), decisao_regra=st.get("decisao"),
                                 perguntas=st["perguntas"], complemento=bool(st.get("complemento") and st["perguntas"]),
                                 nota=self._nota(st["segs"]), dicas_medidor=[], analise_ia=self.analise_ia)
 
@@ -149,7 +153,8 @@ class MotorMock:
                 st["gatilhos"].append(r.texto)
                 continue
             seg = next(s for s in st["segs"] if s.n == p.segmento)
-            slots = [x.model_copy(update={"valor": r.texto}) if x.codigo == p.slot else x for x in seg.slots]
+            valor = roteiros.NAO_INFORMADO if roteiros.e_nao_sei(r.texto) and roteiros.aceita_nao_sei(p.slot) else r.texto
+            slots = [x.model_copy(update={"valor": valor}) if x.codigo == p.slot else x for x in seg.slots]
             st["segs"] = [roteiros.revalida(seg.model_copy(update={"slots": slots})) if s.n == seg.n else s for s in st["segs"]]
         st["rodada"] = min(st["rodada"] + 1, MAX_RODADAS + 1)   # fica em 3 durante o complemento
         return self._resposta(eid)
@@ -164,17 +169,24 @@ class MotorMock:
             desc = v.get(SLOT_PRINCIPAL[s.tipo]) or s.resumo
             reqs.append(RequisitoContrato(n=len(reqs) + 1, tipo=tipo, segmento=s.n, descricao=desc[:500],
                                           criterio_aceite=roteiros.criterio_fixo(s.tipo, v)[:500]))
-        fora = [x.valor for s in segs for x in s.slots if x.codigo == "fora_de_escopo" and x.valor
+        if RX_CALCULO.search(req.relato):        # 1.4.0: exemplo de item inferido, para a tela do SOS mostrar e confirmar/remover
+            s1 = segs[0]
+            reqs.append(RequisitoContrato(
+                n=len(reqs) + 1, tipo=TipoRequisito.CORRETIVO if s1.tipo == TipoSegmento.CORRETIVO else TipoRequisito.EVOLUTIVO,
+                segmento=s1.n, descricao="O sistema deve guardar o histórico dos valores calculados (exemplo de hipótese do mock).",
+                criterio_aceite=roteiros.CRITERIO_INDEFINIDO, origem=Origem.INFERIDO))
+        fora = [x.valor for s in segs for x in s.slots if x.codigo == "fora_de_escopo" and x.valor and not roteiros.nao_informado(x.valor)
                 and x.valor.strip().lower() not in ("nada", "não", "nao")]
         integ = []
         for s in segs:
             v = next((x.valor for x in s.slots if x.codigo == "outros_sistemas"), None)
-            if v and v.strip().lower() not in ("não", "nao", "n"):
+            if v and not roteiros.nao_informado(v) and v.strip().lower() not in ("não", "nao", "n"):
                 integ.append(Integracao(sistema="(a identificar)", sentido="AMBOS", descricao=v))
         regra = self._regra(req)
         falt = roteiros.faltando_com_regra(segs, regra is not None, st.get("decisao"))
         k = Contrato(id=eid, titulo=f"{req.sigla} - {req.relato.strip()[:80]}", objetivo=req.relato.strip()[:300],
-                     requisitos=reqs, fora_escopo=fora, duvidas=[f"Gatilho: {g}" for g in st["gatilhos"]], integracoes=integ,
+                     requisitos=reqs, fora_escopo=fora, integracoes=integ,
+                     duvidas=[f"Gatilho: {g}" for g in st["gatilhos"]] + roteiros.duvidas_nao_informado(segs),
                      segmentos=segs, regra_documentada=regra, decisao_regra=st.get("decisao"), nota=self._nota(segs),
                      faltando=falt, pode_confirmar=not falt, analise_ia=self.analise_ia)
         st["contrato"] = k
@@ -190,13 +202,16 @@ class MotorMock:
         if k is None:
             raise cf.ConfirmacaoInvalida("o Escopo do Pedido ainda não foi gerado: chame POST /entrevistas/{id}/contrato antes")
         cf.verifica_confirmavel(k)
-        grupos = cf.monta_grupos(k, escopo)
+        funcs = cf.funcionalidades_confirmadas(escopo, self._candidatos(st["req"]))
+        grupos = cf.monta_grupos(k, escopo, funcs)
         agora = _agora()
         st["versoes"][0] = dict(origem=0, cd_usuario=None, criado_em=agora, conteudo=k.model_dump(mode="json"))
         st["versoes"][1] = dict(origem=1, cd_usuario=escopo.cd_usuario, criado_em=agora,
-                                conteudo=dict(escopo=escopo.model_dump(mode="json"), grupos=[g.model_dump(mode="json") for g in grupos]))
+                                conteudo=dict(escopo=escopo.model_dump(mode="json"), grupos=[g.model_dump(mode="json") for g in grupos],
+                                              candidatos_confirmados=[dict(id=f.id, nome=f.nome, tipo_ifpug=f.tipo_ifpug) for f in funcs]))
+        st["inferidos"] = cf.inferidos(k, escopo)
         st["situacao"], st["atualizado"] = "PENDENTE", agora
-        return EscopoConfirmado(id=eid, situacao="PENDENTE", grupos=grupos, analise_ia=k.analise_ia, nota=k.nota,
+        return EscopoConfirmado(id=eid, situacao="PENDENTE", grupos=grupos, analise_ia=k.analise_ia, nota=k.nota, funcionalidades=funcs,
                                 regra_documentada=cf.regra_aceita(k))
 
     def vincular(self, eid, vinculo: VinculoChamados) -> Confirmacao:
