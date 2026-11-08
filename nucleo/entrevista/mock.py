@@ -27,7 +27,7 @@ def _agora():
 MAX_RODADAS = 2
 MAX_PERGUNTAS = 5
 RX_MISTO = re.compile(r"\b(tamb[eé]m|al[eé]m disso|aproveitando)\b", re.I)
-RX_GATILHO = re.compile(r"\b(benner|sei|banco|receita|arquivo|planilha|e-?mail)\b", re.I)
+RX_GATILHO = re.compile(r"\b(benner|(?-i:SEI)|banco|receita|arquivo|planilha|e-?mail)\b", re.I)
 RX_REGRA = re.compile(r"n[aã]o (permite|deixa)|bloque", re.I)
 RX_CALCULO = re.compile(r"c[aá]lcul", re.I)
 SLOT_PRINCIPAL = {TipoSegmento.CORRETIVO: "o_que_aconteceu", TipoSegmento.EVOLUTIVO_EXISTENTE: "o_que_muda",
@@ -57,7 +57,8 @@ class MotorMock:
 
     def _perguntas(self, st):
         ps = []
-        if st["rodada"] == 1 and RX_GATILHO.search(roteiros.sem_nao_sei(st["req"].relato)):
+        evolutivo = any(x.codigo == "outros_sistemas" for s in st["segs"] for x in s.slots)   # o item já pergunta sobre isso
+        if st["rodada"] == 1 and not evolutivo and RX_GATILHO.search(roteiros.sem_nao_sei(st["req"].relato)):
             ps.append(Pergunta(id=f"r1g", segmento=1, slot="gatilho",
                                texto="Você citou outro sistema ou arquivo. Os dados serão só consultados, ou também gravados/enviados?",
                                dica="Isso costuma mudar bastante o tamanho do trabalho.",
@@ -65,7 +66,7 @@ class MotorMock:
         for s in st["segs"]:
             for x in s.slots:
                 if not x.preenchido and len(ps) < MAX_PERGUNTAS:
-                    texto, dica = PERGUNTA_SLOT[x.codigo]
+                    texto, dica = roteiros.pergunta_fixa(s.tipo, x.codigo, x.valor)
                     ps.append(Pergunta(id=f"r{st['rodada']}s{s.n}{x.codigo}", segmento=s.n, slot=x.codigo, texto=texto, dica=dica,
                                        opcoes=roteiros.opcoes_fixas(x.codigo)))
         return ps

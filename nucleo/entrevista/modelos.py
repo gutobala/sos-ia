@@ -7,7 +7,7 @@ from typing import Annotated, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-VERSAO_CONTRATO = "1.4.0"
+VERSAO_CONTRATO = "1.4.1"
 # 1.1.0 (05/11/2026, aditiva): decisão do usuário sobre a regra documentada — POST /entrevistas/{id}/regra, campo
 #        `decisao_regra` no estado e no contrato, `regra_documentada` no contrato, slot pseudo "decisao_regra" em `faltando`.
 # 1.2.0 (05/11/2026, aditiva): confirmação do Escopo do Pedido — POST /entrevistas/{id}/confirmacao (um chamado por tipo, no
@@ -24,6 +24,10 @@ VERSAO_CONTRATO = "1.4.0"
 #        contrato, nota menor); `Pergunta.opcoes` (respostas rápidas); `origem` (usuario | documentacao | inferido) em
 #        `RequisitoContrato`, `Integracao` e `RequisitoEscopo`, com `RequisitoEditado.origem/n_contrato` e o evento `inferidos`;
 #        `CandidatoFuncionalidade.id`, `EscopoEditado.candidatos_confirmados` e `EscopoConfirmado.funcionalidades`.
+# 1.4.1 (08/11/2026, correção, sem campo novo; pedido 1.3.3 do teste com usuário): gatilhos com palavras curtas só com contexto
+#        (SEI/API maiúsculas, Caixa Econômica, sem "enviar"/"retorno"); gatilho de integração não repete o item "outros
+#        sistemas" nos evolutivos; item repetido cita a resposta anterior, com pergunta/dica por roteiro; número de chamado
+#        reaproveitado vai para o histórico; aquecimento da busca e evento "tempos" na criação.
 
 
 class Base(BaseModel):

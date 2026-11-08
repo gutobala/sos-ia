@@ -42,7 +42,7 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
 - Cabeçalho obrigatório (menos em `/saude`): `X-SOSIA-Token: mock` (em produção: valor de `SOSIA_TOKEN`).
 - Respostas sempre `application/json; charset=utf-8`; erros sempre no formato `Erro` `{erro, detalhe}`.
 
-## Contrato da API (versão 1.4.0) — `contrato_api/`
+## Contrato da API (versão 1.4.1) — `contrato_api/`
 | Rota | Entrada | Saída |
 |---|---|---|
 | `GET /saude` | — | `Saude` (o SOS decide IA × roteiro fixo por `ok`) |
@@ -68,6 +68,12 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
   posto pela aplicação); `origem` (usuario | documentacao | inferido) nos requisitos e integrações, marcada pelo LLM do contrato,
   com evento `inferidos` (confirmados/removidos) na confirmação; `candidatos_confirmados` (ids do catálogo) gravados na v1 e no
   texto do chamado. Correção junto: "não sei" deixou de disparar o gatilho de integração do SEI (`roteiros.sem_nao_sei`).
+- **1.4.1 (teste com usuário):** gatilho de integração some quando há item "outros sistemas" (`motor._pendentes`); palavras
+  curtas dos gatilhos só com contexto (`config/gatilhos.yaml`); item repetido cita a resposta anterior e usa pergunta/dica do
+  roteiro (`roteiros.pergunta_fixa`, `PERGUNTA_SLOT_TIPO`); número de chamado reaproveitado vai para
+  `app.entrevista_chamado_historico`. **Aquecimento** (`nucleo/aquecimento.py`): `pg_prewarm` das tabelas/índices da entrevista
+  (só a coluna de vetor em uso) + busca de mentira, na subida e a cada `SOSIA_AQUECER_MIN` (30); `shared_buffers` 1 GB no
+  `sosia_db` (`SOSIA_DB_SHARED_BUFFERS`). Evento `tempos` em cada criação. Medição em `dados\aquecimento_medicao.txt`.
 - Máximo de 2 rodadas do LLM. **Complemento (1.3.0):** depois delas, se ainda faltar item obrigatório, a entrevista não se
   encerra: `complemento=true` e só as perguntas fixas do que falta (`roteiros.perguntas_complemento`; sem IA, sem gatilho, sem a
   decisão da regra, no máximo 5, ids `c{n}p{i}`), repetidas até completar. Evento `complemento`; `analise_ia` não muda.

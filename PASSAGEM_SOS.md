@@ -5,6 +5,17 @@ ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Con
 rota existente mudou de significado, e os campos novos de entrada são opcionais). Os JSON Schemas de cada endpoint ficam em
 `contrato_api/`, com o `openapi.json`.
 
+**Correção 1.4.1 (o SOS não muda nada; pedido 1.3.3 do teste com usuário):**
+- a pergunta de integração não repete mais o item "outros sistemas" nos pedidos evolutivos;
+- SEI/API só contam em maiúsculas ou com contexto ("processo no SEI"); "caixa" só como Caixa Econômica; "enviar" e "retorno"
+  sozinhos não disparam mais a pergunta de arquivo;
+- item repetido cita a resposta anterior ("Você respondeu “HOPE”, mas faltou detalhe para “Exemplo concreto”…"), com pergunta e
+  dica próprias de cada roteiro (no "algo novo", o exemplo pede uma situação de uso, não "valor do contrato");
+- número de chamado repetido (Oracle de teste restaurado) é aceito: o vínculo antigo vai para o histórico (4.5);
+- aquecimento da busca na subida e a cada 30 min, e `shared_buffers` de 1 GB no banco do núcleo: a 1ª entrevista a frio caiu de
+  11,3 s para 5,6 s aqui (o SOS mediu 38,6 s depois de dois dias parado). Cada criação grava o evento `tempos` com os segundos
+  por etapa.
+
 **Novo na 1.4.0 (seção 4.7):** "Não sei" aceito em alguns itens, opções de resposta nas perguntas, origem de cada requisito
 (o `inferido` o usuário confirma ou remove) e funcionalidades afetadas marcadas pelo usuário. A tela atual continua funcionando
 sem mudança; o SOS adota os campos novos quando puder.

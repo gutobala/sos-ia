@@ -170,5 +170,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/EscopoEditado.schema.json",
-  "x-versao-contrato": "1.4.0"
+  "x-versao-contrato": "1.4.1"
 }

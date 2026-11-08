@@ -95,6 +95,10 @@ sugerida ao contexto). Se a lista estiver vazia, não faça perguntas de gatilho
   usuários, quando começou), ofereça de 2 a 4 respostas curtas (até 60 caracteres), nas palavras do usuário. Não inclua
   "Não sei" (o sistema acrescenta quando cabe). Se a resposta precisa ser descrita (mensagem de erro, passo a passo, exemplo com
   valores), use lista vazia. O usuário sempre pode escrever outra resposta.
+- Se um item já tem resposta mas ela não basta (curta ou vaga), NÃO repita a pergunta genérica: cite a resposta dele e peça só o
+  que falta, no contexto do pedido. Ex.: ele respondeu "HOPE" ao exemplo de uma pesquisa → "Você citou 'HOPE'. Ao digitar 'HOPE'
+  na pesquisa, o que deve aparecer?". Use dicas que façam sentido para o tipo do pedido (num pedido de algo novo, não fale de
+  "valor do contrato"; peça uma situação de uso).
 - Não pergunte o que o usuário já respondeu. Um item com o valor "Não informado (o usuário não soube responder)" já foi
   respondido: não pergunte de novo. Se todos os itens estão preenchidos e não há gatilho pendente, não pergunte nada.
 

@@ -367,6 +367,61 @@ def test_nao_sei_nao_dispara_o_gatilho_do_sei():
     assert M.detecta_gatilhos("O processo vem do SEI e não sei o número") == ["integracao"]
 
 
+def test_gatilhos_com_palavras_curtas_so_com_contexto():
+    """1.3.3: SEI/API só em maiúsculas ou com contexto; "caixa" só Caixa Econômica; "enviar"/"retorno" sozinhos não contam."""
+    for t in ("Não sei responder", "eu sei que a caixa de seleção some", "ao enviar o formulário", "o retorno da consulta veio vazio",
+              "a api do sistema"):
+        assert M.detecta_gatilhos(t) == [], t
+    for t in ("o processo no sei não abre", "precisa ir para o SEI", "integração via API", "pagamento na Caixa Econômica"):
+        assert "integracao" in M.detecta_gatilhos(t), t
+    assert M.detecta_gatilhos("gerar o arquivo de retorno") == ["arquivo"]
+
+
+def test_integracao_nao_repete_o_item_outros_sistemas(ambiente):
+    """1.3.3 (teste com usuário): num evolutivo, o item "outros sistemas" já pergunta sobre integração; o gatilho não repete."""
+    mot, usa = ambiente
+    usa(resp_entrevista(tipo="EVOLUTIVO_NOVO", slots={"quem_usa": "Todos os funcionários"},
+                        perguntas=[(1, "gatilho", "Vai só consultar o SEI ou também gravar?"),
+                                   (1, "outros_sistemas", "Busca ou grava dados em outro sistema?")]))
+    e = mot.criar(nova(intencao=Intencao.ALGO_NOVO, relato="Preciso de uma pesquisa que consulte os processos do SEI na intranet."))
+    slots = [p.slot for p in e.perguntas]
+    assert "gatilho" not in slots and "outros_sistemas" in slots
+
+
+def test_item_repetido_cita_a_resposta_e_usa_dica_do_roteiro(ambiente):
+    """1.3.3: "HOPE" (curto) no exemplo de algo novo → a pergunta seguinte cita "HOPE" e não fala de contrato/valor."""
+    mot, usa = ambiente
+    novo = {"quem_usa": "Todos os funcionários", "informacoes_guardadas": "Nome do sistema ou a sigla dele",
+            "o_que_faz": "Mostra o link do sistema que tem o nome digitado", "fora_de_escopo": "nada", "outros_sistemas": "não"}
+    usa(resp_entrevista(tipo="EVOLUTIVO_NOVO", slots=novo, perguntas=[(1, "exemplo_concreto", "Pode dar um exemplo de busca?")]),
+        resp_entrevista(tipo="EVOLUTIVO_NOVO", slots=novo))                # 2ª rodada: o LLM não repete; entra a pergunta fixa
+    e = mot.criar(nova(intencao=Intencao.ALGO_NOVO, relato="Seria bom ter uma pesquisa dos sistemas da intranet."))
+    e2 = mot.responder(e.id, Respostas(respostas=[Resposta(id=e.perguntas[0].id, texto="HOPE")]))
+    (p,) = e2.perguntas
+    assert p.slot == "exemplo_concreto" and "HOPE" in p.texto and "situação de uso" in p.texto
+    assert "contrato" not in (p.dica or "").lower() and "HOPE" in p.dica
+
+
+def test_evento_tempos_da_criacao(ambiente):
+    mot, usa = ambiente
+    usa(resp_entrevista())
+    e = mot.criar(nova())
+    with db.db_app() as c:
+        ev = c.execute("SELECT conteudo FROM app.entrevista_evento WHERE entrevista_id = %s AND tipo = 'tempos'", (e.id,)).fetchone()
+    assert {"resolve_sistema_s", "pii_s", "rag_s", "llm_entrevista_s", "total_s"} <= set(ev["conteudo"])
+
+
+def test_aquecimento_pre_carrega_so_a_coluna_em_uso():
+    from nucleo import aquecimento, embeddings
+    with db.db() as c:
+        rels = aquecimento._relacoes(c)
+        blocos, _ = aquecimento.prewarm(c)
+    assert any("conhecimento_trecho" in r for r in rels) and any(r.startswith("pg_toast.") for r in rels)
+    outra = "ix_conh_trecho_emb" if embeddings.coluna_rag() == "embedding_3l" else "ix_conh_trecho_emb3l"
+    assert not any(r.split(".")[-1] == outra for r in rels)
+    assert blocos is None or blocos > 0
+
+
 def test_nao_sei_em_item_bloqueante_continua_pedindo(ambiente):
     mot, usa = ambiente
     slots = dict(CHEIO_MENOS_DESDE, desde_quando_quem="Desde ontem, todos os usuários")

@@ -22,6 +22,8 @@ O LLM nunca decide sozinho o que bloqueia: ele preenche e pergunta; quem diz se 
 import datetime
 import os
 import re
+import threading
+import time
 import uuid
 
 import psycopg
@@ -31,7 +33,7 @@ from .. import config, embeddings, llm, pii
 from .. import db as dbm
 from ..rag import busca, catalogo
 from . import armazem, confirmacao as cf, roteiros
-from .mock import PERGUNTA_SLOT, SLOT_PRINCIPAL
+from .mock import SLOT_PRINCIPAL
 from .modelos import (CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra, DecisaoRegraDocumentada,
                       EntrevistaPendente, EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista, Integracao, Intencao,
                       NovaEntrevista, Origem, Pergunta, RegraDocumentada, RequisitoContrato, Respostas, Segmento, TipoRequisito, TipoSegmento,
@@ -125,10 +127,23 @@ def _tem_wiki(conn, chave):
 
 
 # ---------------------------------------------------------------- RAG
+_medicao = threading.local()     # segundos por etapa da última rag() desta thread (vai no evento "tempos" da criação)
+
+
+def tempos_rag():
+    return dict(getattr(_medicao, "tempos", {}))
+
+
 def rag(conn, intencao, sistema_id, wiki, texto):
-    """(docs, candidatos). docs = trechos numerados da wiki para o prompt (híbrida + regras de negócio no corretivo)."""
+    """(docs, candidatos). docs = trechos numerados da wiki para o prompt (híbrida + regras de negócio no corretivo).
+    Mede o vetor da consulta (API de embeddings), a busca na wiki e o catálogo em `tempos_rag()`."""
     docs, cand = [], []
     q = texto[:4000]
+    tempos, t = {}, time.time()
+    _medicao.tempos = tempos
+    if wiki or (sistema_id and intencao != Intencao.ALGO_NOVO):
+        embeddings.consulta_sql(q)                       # o vetor fica em cache: busca e catálogo não chamam a API de novo
+        tempos["embeddings_s"], t = round(time.time() - t, 2), time.time()
     if wiki:
         for x in busca.busca(conn, q, wiki, n=5, incluir_teste=False, expandir=False, max_por_pagina=1)["resultados"]:
             docs.append(dict(pagina=x["origem_dokuwiki"], titulo=x["titulo_pagina"], secao=x["secao"], tipo=x["tipo"],
@@ -144,10 +159,12 @@ def rag(conn, intencao, sistema_id, wiki, texto):
                 if x["origem_dokuwiki"] + "|" + (x["secao"] or "") not in vistos:
                     docs.append(dict(pagina=x["origem_dokuwiki"], titulo=x["titulo_pagina"], secao=x["secao"], tipo=x["tipo"],
                                      texto=(x["texto"] or "")[:700], cos=round(float(x["cos"]), 3)))
+        tempos["wiki_s"], t = round(time.time() - t, 2), time.time()
     if sistema_id and intencao != Intencao.ALGO_NOVO:
         for c in catalogo.candidatos(conn, sistema_id, datetime.date.today() + datetime.timedelta(days=1), [q]):
             cand.append(dict(id=c["id"], nome=c["nome"], tipo_ifpug=c["tipo"], modulo=c["modulo"], similaridade=c["similaridade"],
                              texto=c["texto"]))
+        tempos["catalogo_s"] = round(time.time() - t, 2)
     return docs, cand
 
 
@@ -193,9 +210,26 @@ def _fmt_decisao(est):
             "não volte a indicar regra documentada (use 0).")
 
 
+def tem_slot_outros_sistemas(segs):
+    """Algum segmento evolutivo: o item "outros sistemas" já pergunta sobre integração (segmentos em dict ou Segmento)."""
+    for s in segs:
+        slots = s["slots"] if isinstance(s, dict) else s.slots
+        if any((x["codigo"] if isinstance(x, dict) else x.codigo) == "outros_sistemas" for x in slots):
+            return True
+    return False
+
+
 def _pendentes(est):
+    """Gatilhos detectados e ainda não perguntados. O de integração só vale quando não há item "outros sistemas" (pedido só
+    corretivo): nos evolutivos a pergunta do item já cobre, e repetir a mesma pergunta parece defeito ao usuário (teste de 06/11)."""
     texto = est["texto"] + "\n" + "\n".join(r["resposta"] for r in est["respostas"])
-    return [c for c in detecta_gatilhos(texto) if c not in est["gatilhos_feitos"]]
+    pend = [c for c in detecta_gatilhos(texto) if c not in est["gatilhos_feitos"]]
+    # 1ª rodada: ainda não há segmentos; vale o roteiro da opção do cardápio
+    evolutivo = (tem_slot_outros_sistemas(est["segs"]) if est["segs"]
+                 else roteiros.roteiro_da_intencao(Intencao(est["intencao"])) != TipoSegmento.CORRETIVO)
+    if "integracao" in pend and evolutivo:
+        pend.remove("integracao")
+    return pend
 
 
 def prompt_entrevista(est, segs):
@@ -253,6 +287,8 @@ def aplica(est, resp, pendentes=()):
 
     # perguntas: só slot vazio do roteiro ou gatilho; uma por slot; máx. 5
     ps, vistos, n_gat = [], set(), 0
+    if tem_slot_outros_sistemas(segs):                 # o LLM criou um segmento evolutivo: o item já cobre a integração
+        pendentes = [c for c in pendentes if c != "integracao"]
     if est["rodada"] <= MAX_RODADAS:
         por_n = {s.n: s for s in segs}
         for p in resp["perguntas"]:
@@ -268,7 +304,7 @@ def aplica(est, resp, pendentes=()):
         cobertos = {(p["segmento"], p["slot"]) for p in ps}
         for f in roteiros.faltando(segs):                   # o LLM esqueceu um slot vazio: pergunta fixa do roteiro
             if (f.segmento, f.slot) not in cobertos:
-                t, d = PERGUNTA_SLOT[f.slot]
+                t, d = roteiros.pergunta_do_item(segs, f)
                 ps.append(dict(segmento=f.segmento, slot=f.slot, texto=t, dica=d, opcoes=roteiros.opcoes_fixas(f.slot)))
     est["perguntas"] = [dict(p, id=f"r{est['rodada']}p{i}") for i, p in enumerate(ps[:MAX_PERGUNTAS], 1)]
 
@@ -322,7 +358,7 @@ def roteiro_fixo(est):
         ps += [dict(segmento=1, slot="gatilho", texto=gat[c]["pergunta"], dica=None, opcoes=[]) for c in pend[:1]]
         est["gatilhos_feitos"] += pend[:1]
         for f in roteiros.faltando(segs):
-            t, d = PERGUNTA_SLOT[f.slot]
+            t, d = roteiros.pergunta_do_item(segs, f)
             ps.append(dict(segmento=f.segmento, slot=f.slot, texto=t, dica=d, opcoes=roteiros.opcoes_fixas(f.slot)))
     est["perguntas"] = [dict(p, id=f"r{est['rodada']}p{i}") for i, p in enumerate(ps[:MAX_PERGUNTAS], 1)]
     est["nota"] = nota(segs)
@@ -401,22 +437,39 @@ class Motor:
     # ---- API
     def criar(self, req: NovaEntrevista) -> EstadoEntrevista:
         eid = str(uuid.uuid4())
+        t0 = t = time.time()
+        tempos = {}
+
+        def marca(etapa):
+            nonlocal t
+            tempos[etapa], t = round(time.time() - t, 2), time.time()
+
         conn, app = self.conectar(), None
         try:
             app = self.conectar_app()
+            marca("conexoes_s")
             sid, wiki = resolve_sistema(conn, req.sigla)
+            marca("resolve_sistema_s")
             texto, imgs, notas = pii.prepara(req.relato, [i.model_dump() for i in req.imagens], conn)
+            marca("pii_s")
             est = dict(intencao=req.intencao.value, sigla=req.sigla, texto=texto, notas_pii=notas, rodada=1, segs=[], perguntas=[],
                        respostas=[], gatilhos_feitos=[], docs=[], candidatos=[], regra=None, decisao=None, nota=0, dicas=[], contrato=None)
+            _medicao.tempos = {}
             try:
                 docs, est["candidatos"] = rag(conn, req.intencao, sid, wiki, texto)
                 est["docs"] = sem_riscados(docs)
             except Exception as e:  # noqa: BLE001  (sem RAG a entrevista continua)
                 conn.rollback()
                 est["notas_pii"].append(f"RAG indisponível: {type(e).__name__}")
+            marca("rag_s")
+            tempos.update(tempos_rag())
             armazem.criar(app, eid, req, sid, config.MODO_PII, True, est, 0, RETENCAO_DIAS)
             est["candidatos"] = self._reordena_candidatos(app, eid, est)
+            marca("reordena_candidatos_s")
             ia = self._rodada(app, eid, est, imgs)
+            marca("llm_entrevista_s")
+            tempos["total_s"] = round(time.time() - t0, 2)
+            armazem.evento(app, eid, 1, "tempos", conteudo=tempos)       # 1.3.3: onde está o tempo da 1ª entrevista a frio
             armazem.salvar(app, eid, est["rodada"], _situacao(est, None), ia, est["nota"], est)
             app.commit()
             return self._estado(eid, est, ia)

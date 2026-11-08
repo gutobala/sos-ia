@@ -9,7 +9,10 @@ services:
     image: pgvector/pgvector:pg16
     container_name: sosia_db
     shm_size: 1gb
-    command: ["postgres", "-c", "maintenance_work_mem=512MB", "-c", "max_parallel_maintenance_workers=2"]
+    # shared_buffers: o conjunto quente da entrevista (índice HNSW da wiki no 3-large, 317 MB, + trechos, catálogo e histórico)
+    # não cabia nos 128 MB padrão; a 1ª busca depois de horas parado lia o índice do disco (38 s). Ver nucleo/aquecimento.py.
+    command: ["postgres", "-c", "maintenance_work_mem=512MB", "-c", "max_parallel_maintenance_workers=2",
+              "-c", "shared_buffers=${SOSIA_DB_SHARED_BUFFERS:-1GB}", "-c", "effective_cache_size=3GB"]
     environment:
       POSTGRES_DB: sosia
       POSTGRES_USER: sosia
@@ -65,6 +68,7 @@ services:
       SOSIA_EMB: ${SOSIA_EMB:-azure}
       SOSIA_PII_MODO: ${SOSIA_PII_MODO:-local}
       SOSIA_IMAGEM_DETALHE: ${SOSIA_IMAGEM_DETALHE:-high}
+      SOSIA_AQUECER_MIN: ${SOSIA_AQUECER_MIN:-30}
       SOSIA_MODELO_CHAT: ${SOSIA_MODELO_CHAT:-gpt-5.4-mini}
       SOSIA_MODELO_RACIOCINIO: ${SOSIA_MODELO_RACIOCINIO:-gpt-5.4}
       SOSIA_MODELO_PREVIA: ${SOSIA_MODELO_PREVIA:-gpt-4.1}

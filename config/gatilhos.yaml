@@ -7,7 +7,9 @@
 
 - codigo: integracao
   descricao: dados que vêm de outro sistema ou vão para ele
-  padrao: '\b(benner|sei|receita( federal)?|serpro|banco do brasil|brb|caixa|siafi|siggo|cartório|cartorio|gdf|integra[cç][aã]o|webservice|api)\b'
+  # Palavras curtas e comuns só valem com contexto (o custo de um falso positivo é uma pergunta sem sentido para o usuário):
+  # SEI e API só em maiúsculas ou com contexto ("eu sei", "não sei" não contam); "caixa" só como Caixa Econômica / CEF.
+  padrao: '\b(benner|(?-i:SEI)|processo (no |do )?sei|sistema eletr[oô]nico de informa[cç][oõ]es|receita( federal)?|serpro|banco do brasil|brb|caixa econ[oô]mica|(?-i:CEF)|siafi|siggo|cartório|cartorio|gdf|integra[cç][aã]o|webservice|(?-i:API))\b'
   pergunta: 'Você citou outro sistema. As informações serão só consultadas nele ou também precisam ser gravadas ou enviadas para ele?'
 
 - codigo: guardar_exibir
@@ -22,7 +24,9 @@
 
 - codigo: arquivo
   descricao: geração, envio ou leitura de arquivo, planilha ou e-mail
-  padrao: '\b(arquivo|planilha|excel|csv|txt|pdf|e-?mail|enviar|remessa|retorno|importar|exportar)\b'
+  # "enviar" e "retorno" sozinhos saíram (comuns demais: "enviar o formulário", "retorno da consulta"); "arquivo de retorno"
+  # continua pegando por "arquivo".
+  padrao: '\b(arquivo|planilha|excel|csv|txt|pdf|e-?mail|remessa|importar|exportar)\b'
   pergunta: 'O sistema vai gerar, enviar ou ler algum arquivo ou e-mail? Em que formato e para quem?'
 
 - codigo: layout_legal

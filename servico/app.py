@@ -33,6 +33,8 @@ if config.MOCK:
 else:
     from nucleo.entrevista.motor import Motor
     motor = Motor()
+    from nucleo import aquecimento
+    aquecimento.inicia()          # pg_prewarm + busca de mentira na subida e a cada SOSIA_AQUECER_MIN (thread em segundo plano)
 
 
 def exige_token(x_sosia_token: str = Header(default="")):

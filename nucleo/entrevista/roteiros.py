@@ -50,7 +50,17 @@ PERGUNTA_SLOT = {
     "informacoes_guardadas": ("Que informações a funcionalidade vai guardar?", "Liste os campos principais."),
     "o_que_faz": ("O que a funcionalidade faz com essas informações?", None),
 }
+# Pergunta própria de um roteiro quando a geral não serve (teste com usuário, 06/11: a dica "contrato X, valor Y" num pedido de
+# algo novo pareceu defeito).
+PERGUNTA_SLOT_TIPO = {
+    (TipoSegmento.EVOLUTIVO_NOVO, "exemplo_concreto"): (
+        "Descreva uma situação de uso: o que a pessoa faz e o que o sistema mostra.",
+        "Ex.: ao digitar a sigla HOPE na pesquisa, aparece o link do sistema."),
+    (TipoSegmento.EVOLUTIVO_NOVO, "fora_de_escopo"): (
+        "O que NÃO precisa fazer parte desta primeira versão?", "Se nada, responda 'nada'."),
+}
 MAX_PERGUNTAS_COMPLEMENTO = 5
+MAX_CITACAO = 80
 
 # "Não sei" (1.4.0): estes itens aceitam a resposta e não bloqueiam a abertura; o valor vira NAO_INFORMADO, o item sai de
 # `faltando`, entra nas dúvidas do contrato e baixa a nota. Os demais (onde ocorre, o que aconteceu, funcionalidade, o que muda,
@@ -173,12 +183,34 @@ def criterio_fixo(tipo, valores):
     return f"Conferir com o exemplo: {ex}" if ex and not nao_informado(ex) else CRITERIO_INDEFINIDO
 
 
+def pergunta_fixa(tipo, codigo, valor=None):
+    """(texto, dica) da pergunta fixa de um item, própria do roteiro quando existe. Se o item já tem uma resposta com conteúdo
+    que não bastou, a pergunta cita a resposta e diz por quê (em vez de repetir a pergunta genérica)."""
+    tipo = TipoSegmento(tipo)
+    texto, dica = PERGUNTA_SLOT_TIPO.get((tipo, codigo)) or PERGUNTA_SLOT[codigo]
+    v = (valor or "").strip()
+    if v and not nao_informado(v) and conteudo(v):
+        cit = v if len(v) <= MAX_CITACAO else v[:MAX_CITACAO - 1].rstrip() + "…"
+        rotulo = next((r for c, r, _ in ROTEIROS[tipo] if c == codigo), codigo)
+        texto = f"Você respondeu “{cit}”, mas faltou detalhe para “{rotulo}”. {texto}"
+    return texto, dica
+
+
+def pergunta_do_item(segmentos, f):
+    """(texto, dica) para um item de `faltando`, com o tipo e o valor atual do segmento dele."""
+    s = next((s for s in segmentos if s.n == f.segmento), None)
+    if s is None:
+        return PERGUNTA_SLOT[f.slot]
+    valor = next((x.valor for x in s.slots if x.codigo == f.slot), None)
+    return pergunta_fixa(s.tipo, f.slot, valor)
+
+
 def perguntas_complemento(segmentos, n):
     """Rodada de complemento (1.3.0), depois das 2 rodadas: só as perguntas fixas dos itens obrigatórios que faltam, na ordem de
     `faltando`, no máximo 5. Sem gatilho e sem a decisão da regra documentada. `n` (contador de complementos) deixa os ids únicos."""
     out = []
     for i, f in enumerate(faltando(segmentos)[:MAX_PERGUNTAS_COMPLEMENTO], 1):
-        texto, dica = PERGUNTA_SLOT[f.slot]
+        texto, dica = pergunta_do_item(segmentos, f)
         out.append(dict(id=f"c{n}p{i}", segmento=f.segmento, slot=f.slot, texto=texto, dica=dica, opcoes=opcoes_fixas(f.slot)))
     return out
 
