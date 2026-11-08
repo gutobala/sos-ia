@@ -610,12 +610,16 @@ class Motor:
             tipos = [g["tipo"] for g in v1["conteudo"]["grupos"]]
             if not cf.valida_vinculo(tipos, vinculo, armazem.chamados(app, eid)):
                 try:
-                    armazem.vincula(app, eid, [(c.tipo.value, c.cd_solicitacao) for c in vinculo.chamados], vinculo.cd_pacote)
-                except psycopg.errors.UniqueViolation:
+                    retirados = armazem.vincula(app, eid, [(c.tipo.value, c.cd_solicitacao) for c in vinculo.chamados], vinculo.cd_pacote)
+                except psycopg.errors.UniqueViolation:                 # corrida: outra chamada vinculou o mesmo número agora
                     app.rollback()
-                    raise cf.ConfirmacaoInvalida("um dos chamados informados já está vinculado a outra entrevista")
+                    raise cf.ConfirmacaoInvalida("um dos chamados informados acabou de ser vinculado a outra entrevista; repita")
                 armazem.muda_situacao(app, eid, "CONFIRMADA")
                 armazem.evento(app, eid, est["rodada"], "vinculo", conteudo=vinculo.model_dump(mode="json"))
+                for r in retirados:      # número reaproveitado: o vínculo antigo foi para o histórico; registra nas duas entrevistas
+                    sub = dict(cd_solicitacao=r["cd_solicitacao"], tipo=r["tipo"], de=str(r["entrevista_id"]), para=eid)
+                    armazem.evento(app, eid, est["rodada"], "vinculo_substituido", conteudo=sub)
+                    armazem.evento(app, r["entrevista_id"], None, "vinculo_retirado", conteudo=sub)
                 app.commit()
             return self._confirmacao(eid, armazem.chamados(app, eid))
         finally:

@@ -299,10 +299,11 @@ def test_confirmacao_misto_gera_dois_chamados_e_vinculo_com_pacote():
     assert s["versoes"][1]["origem"] == 1 and s["versoes"][1]["cd_usuario"] == 321
     assert c.get("/solicitacoes/123456789/escopo", headers=H).status_code == 404
 
-    # chamado já vinculado a outra entrevista
+    # número reaproveitado (Oracle de teste restaurado): o vínculo antigo sai e o novo entra
     k3 = pronta("Ao salvar a alienação aparece HTTP 500 e nada é gravado.")
     assert confirma(k3["id"], escopo_de(k3)).status_code == 200
-    assert vincula(k3["id"], [("CORRETIVO", 91001)]).status_code == 409
+    assert vincula(k3["id"], [("CORRETIVO", 91001)]).status_code == 200
+    assert c.get("/solicitacoes/91001/escopo", headers=H).json()["entrevista_id"] == k3["id"]
 
 
 def test_confirmacao_um_grupo_sem_sufixo_e_validacoes():

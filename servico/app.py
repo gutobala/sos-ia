@@ -143,7 +143,8 @@ def confirmacao(eid: str, escopo: EscopoEditado):
 @app.post("/entrevistas/{eid}/confirmacao/chamados", response_model=Confirmacao, responses=ERROS, dependencies=[Depends(exige_token)])
 def vincular_chamados(eid: str, vinculo: VinculoChamados):
     """Passo 3: o SOS informa os CD_SOLICITACAO gravados no Oracle. Idempotente (repetição idêntica → 200 com o mesmo corpo).
-    409: sem confirmação, tipos diferentes dos grupos, outros números numa entrevista já confirmada ou chamado de outra entrevista.
+    409: sem confirmação, tipos diferentes dos grupos ou outros números numa entrevista já confirmada. Número já ligado a OUTRA
+    entrevista é tratado como reaproveitado (Oracle restaurado): o vínculo antigo vai para o histórico e o novo é aceito.
     422: tipo repetido ou 2 chamados sem cd_pacote."""
     try:
         return _motor().vincular(eid, vinculo)

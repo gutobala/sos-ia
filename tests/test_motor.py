@@ -281,13 +281,23 @@ def test_confirmacao_ponta_a_ponta(ambiente):
     with pytest.raises(cf.ConfirmacaoInvalida):
         mot.confirmacao(e.id, esc)
 
-    # o mesmo chamado não pode ir para outra entrevista
+    # número reaproveitado (Oracle de teste restaurado): o vínculo antigo vai para o histórico e o novo entra
     usa(resp_entrevista(slots=cheio), contrato)
     e2 = mot.criar(nova())
     mot.contrato(e2.id)
     mot.confirmacao(e2.id, esc)
-    with pytest.raises(cf.ConfirmacaoInvalida):
-        mot.vincular(e2.id, v)
+    assert mot.vincular(e2.id, v).situacao == "CONFIRMADA"
+    assert mot.escopo_do_chamado(cd).entrevista_id == e2.id
+    with db.db_app() as c:
+        h = c.execute("SELECT entrevista_id, substituido_por, motivo FROM app.entrevista_chamado_historico WHERE cd_solicitacao = %s",
+                      (cd,)).fetchall()
+        ev_novo = c.execute("SELECT conteudo FROM app.entrevista_evento WHERE entrevista_id = %s AND tipo = 'vinculo_substituido'",
+                            (e2.id,)).fetchone()
+        ev_antigo = c.execute("SELECT count(*) n FROM app.entrevista_evento WHERE entrevista_id = %s AND tipo = 'vinculo_retirado'",
+                              (e.id,)).fetchone()
+        c.execute("DELETE FROM app.entrevista_chamado_historico WHERE cd_solicitacao = %s", (cd,))
+    assert [(str(x["entrevista_id"]), str(x["substituido_por"])) for x in h] == [(e.id, e2.id)] and "reaproveitado" in h[0]["motivo"]
+    assert ev_novo["conteudo"]["de"] == e.id and ev_antigo["n"] == 1
     with pytest.raises(KeyError):
         mot.escopo_do_chamado(cd + 1)
 

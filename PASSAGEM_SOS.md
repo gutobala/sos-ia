@@ -145,7 +145,9 @@ Saída (`EscopoConfirmado`):
 ```
 - Os tipos têm de ser exatamente os dos grupos do passo 1 (409). Tipo repetido ou 2 chamados sem `cd_pacote` → 422.
 - **Idempotente:** repetir com os mesmos números devolve 200 com o mesmo corpo. Outros números numa entrevista já confirmada → 409.
-  Um `cd_solicitacao` já vinculado a outra entrevista → 409.
+  Um `cd_solicitacao` já vinculado a **outra** entrevista é tratado como número reaproveitado (o Oracle de teste foi restaurado e
+  a sequence repetiu o número): o vínculo antigo vai para o histórico (`app.entrevista_chamado_historico`, com evento nas duas
+  entrevistas) e o novo é aceito (200). Antes da 1.4.0 isso dava 409.
 - Sem o passo 1 antes → 409. Saída (`Confirmacao`): `{id, versao_contrato, situacao: "CONFIRMADA", chamados[], cd_pacote}`.
 
 **Depois de CONFIRMADA:** `/respostas`, `/regra` e `/confirmacao` dão 409. `/contrato` devolve o mesmo escopo, sem mudar nada.

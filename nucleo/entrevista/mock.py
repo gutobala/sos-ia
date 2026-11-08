@@ -221,8 +221,10 @@ class MotorMock:
         tipos = [g["tipo"] for g in st["versoes"][1]["conteudo"]["grupos"]]
         existentes = [dict(tipo=t, cd_solicitacao=cd, cd_pacote=st["cd_pacote"]) for t, cd in st["chamados"]]
         if not cf.valida_vinculo(tipos, vinculo, existentes):
-            if any(self.por_chamado.get(c.cd_solicitacao, eid) != eid for c in vinculo.chamados):
-                raise cf.ConfirmacaoInvalida("um dos chamados informados já está vinculado a outra entrevista")
+            for c in vinculo.chamados:          # número reaproveitado: o vínculo antigo sai (como no motor, que guarda histórico)
+                antiga = self.por_chamado.get(c.cd_solicitacao)
+                if antiga and antiga != eid:
+                    self.estado[antiga]["chamados"] = [x for x in self.estado[antiga]["chamados"] if x[1] != c.cd_solicitacao]
             st["chamados"] = sorted((c.tipo.value, c.cd_solicitacao) for c in vinculo.chamados)
             st["cd_pacote"] = vinculo.cd_pacote
             self.por_chamado.update({c.cd_solicitacao: eid for c in vinculo.chamados})

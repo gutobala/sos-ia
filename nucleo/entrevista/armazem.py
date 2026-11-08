@@ -12,6 +12,7 @@ restaurável do dump; este guarda dado de produção (Escopo do Pedido confirmad
   entrevista_escopo   versões do Escopo do Pedido: 0 = gerado pela IA, 1 = editado e confirmado pelo usuário, 2+ = Sustentação
                       (Fase 2). Conteúdo em jsonb.
   entrevista_chamado  chamados do SOS gerados pela confirmação: um por tipo (CORRETIVO/EVOLUTIVO) e o pacote (TS_PACOTE).
+  entrevista_chamado_historico  vínculos retirados quando o número do chamado foi reaproveitado (Oracle de teste restaurado).
 As tabelas são criadas na primeira conexão (idempotente).
 """
 import datetime
@@ -70,6 +71,17 @@ CREATE TABLE IF NOT EXISTS app.entrevista_chamado (
     criado_em       timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (entrevista_id, tipo)
 );
+CREATE TABLE IF NOT EXISTS app.entrevista_chamado_historico (   -- vínculos substituídos (número de chamado reaproveitado)
+    entrevista_id   uuid NOT NULL REFERENCES app.entrevista(id) ON DELETE CASCADE,
+    tipo            text NOT NULL,
+    cd_solicitacao  bigint NOT NULL,
+    cd_pacote       bigint,
+    criado_em       timestamptz NOT NULL,
+    substituido_em  timestamptz NOT NULL DEFAULT now(),
+    substituido_por uuid,                         -- entrevista que recebeu o número (nulo = só retirado)
+    motivo          text NOT NULL
+);
+CREATE INDEX IF NOT EXISTS entrevista_chamado_historico_cd_idx ON app.entrevista_chamado_historico (cd_solicitacao);
 """
 _pronto = set()
 
@@ -139,11 +151,35 @@ def versoes(conn, eid):
     return conn.execute("SELECT * FROM app.entrevista_escopo WHERE entrevista_id = %s::uuid ORDER BY versao", (eid,)).fetchall()
 
 
+MOTIVO_REAPROVEITADO = "número de chamado reaproveitado (o anterior não existe mais no Oracle)"
+
+
+def retira_vinculo(conn, cd_solicitacao, substituido_por=None, motivo=MOTIVO_REAPROVEITADO):
+    """Move o vínculo atual do chamado para o histórico. Devolve a linha retirada (ou None se não havia vínculo)."""
+    v = conn.execute("""DELETE FROM app.entrevista_chamado WHERE cd_solicitacao = %s
+                        RETURNING entrevista_id, tipo, cd_solicitacao, cd_pacote, criado_em""", (cd_solicitacao,)).fetchone()
+    if v:
+        conn.execute("""INSERT INTO app.entrevista_chamado_historico
+                        (entrevista_id, tipo, cd_solicitacao, cd_pacote, criado_em, substituido_por, motivo)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                     (v["entrevista_id"], v["tipo"], v["cd_solicitacao"], v["cd_pacote"], v["criado_em"], substituido_por, motivo))
+    return v
+
+
 def vincula(conn, eid, chamados, cd_pacote):
-    """chamados: [(tipo, cd_solicitacao)]. cd_solicitacao é único: um chamado só pertence a uma entrevista."""
+    """chamados: [(tipo, cd_solicitacao)]. cd_solicitacao é único: um chamado só pertence a uma entrevista.
+    Número já ligado a OUTRA entrevista: o vínculo antigo é obsoleto (o número acabou de sair da sequence do Oracle, então o
+    chamado antigo não existe mais — acontece quando o Oracle de teste é restaurado). Ele vai para o histórico e o novo entra.
+    Devolve os vínculos retirados."""
+    retirados = []
+    for _, cd in chamados:
+        atual = chamado(conn, cd)
+        if atual and str(atual["entrevista_id"]) != str(eid):
+            retirados.append(retira_vinculo(conn, cd, eid))
     for tipo, cd in chamados:
         conn.execute("INSERT INTO app.entrevista_chamado (entrevista_id, tipo, cd_solicitacao, cd_pacote) VALUES (%s,%s,%s,%s)",
                      (eid, tipo, cd, cd_pacote))
+    return retirados
 
 
 def chamados(conn, eid):
