@@ -234,6 +234,45 @@ def test_inferido_e_candidatos_confirmados_no_mock():
     assert "FUNCIONALIDADES INDICADAS PELO USUÁRIO" in t and "(sugerido pela análise e confirmado pelo usuário)" in t
 
 
+# ---------------------------------------------------------------- menus e documentação (1.5.0)
+def test_menus_do_mock():
+    m = valida("Menus", c.get("/sistemas/666/menus", headers=H, params=dict(sigla="GOP")).json())
+    assert m["fonte"] == "wiki" and m["modulos"] == []
+    ids = {x["id"] for x in m["menus"]}
+    assert any(not x["folha"] for x in m["menus"]) and all(x["pai"] is None or x["pai"] in ids for x in m["menus"])
+    assert c.get("/sistemas/666/menus", headers=H).status_code == 422             # sigla obrigatória
+    assert c.get("/sistemas/666/menus", params=dict(sigla="GOP")).status_code == 401
+
+
+def test_ponto_de_partida_e_documentos_no_mock():
+    ponto = dict(caminho="Cadastro > Alienação", menu_id="m11", fonte="wiki")
+    e = nova("Ao salvar a alienação aparece HTTP 500 e nada é gravado.", ponto_partida=ponto)
+    onde = next(x for x in e["segmentos"][0]["slots"] if x["codigo"] == "onde_ocorre")
+    assert onde["valor"] == "Menu: Cadastro > Alienação" and onde["preenchido"]
+    assert "onde_ocorre" not in [p["slot"] for p in e["perguntas"]]
+    e2 = nova("Quero mudar o cálculo do desconto da venda direta.", intencao="MUDAR_EXISTENTE",
+              ponto_partida=dict(caminho="tela de venda direta", fonte="livre"))
+    assert next(x for x in e2["segmentos"][0]["slots"] if x["codigo"] == "funcionalidade")["valor"] == "tela de venda direta"
+    assert len(e["documentos"]) == 2
+    pag = e["documentos"][0]["pagina"]
+    d = valida("Documentacao", c.get("/documentacao", headers=H, params=dict(pagina=pag, entrevista=e["id"])).json())
+    assert d["pagina"] == pag and d["secoes"]
+    r = c.get("/documentacao", headers=H, params=dict(pagina="sistemas:outro:x", entrevista=e["id"]))
+    assert r.status_code == 404 and valida("Erro", r.json())
+    assert c.get("/documentacao", headers=H, params=dict(pagina=pag, entrevista="nao-existe")).status_code == 404
+    r = c.post("/entrevistas", headers=H, json=dict(cd_sistema=1, sigla="GAI", intencao="ALGO_NOVO", relato="preciso de um cadastro novo",
+                                                    ponto_partida=dict(caminho="x" * 301, fonte="livre")))
+    assert r.status_code == 422
+
+
+def test_documentos_lidos_no_mock():
+    k = pronta("Ao salvar a alienação aparece HTTP 500 e nada é gravado.")
+    st = c.get(f"/entrevistas/{k['id']}", headers=H).json()
+    pag = st["documentos"][1]["pagina"]
+    assert confirma(k["id"], escopo_de(k, documentos_lidos=["sistemas:gai:nao_mostrada"])).status_code == 422
+    assert confirma(k["id"], escopo_de(k, documentos_lidos=[pag])).status_code == 200
+
+
 # ---------------------------------------------------------------- confirmação (1.2.0)
 def pronta(relato, intencao="PAROU_DE_FUNCIONAR"):
     """Entrevista respondida até o fim e com o contrato gerado e confirmável."""

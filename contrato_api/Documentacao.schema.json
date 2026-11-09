@@ -1,0 +1,57 @@
+{
+  "$defs": {
+    "SecaoDocumentacao": {
+      "additionalProperties": false,
+      "properties": {
+        "secao": {
+          "title": "Secao",
+          "type": "string"
+        },
+        "texto": {
+          "title": "Texto",
+          "type": "string"
+        }
+      },
+      "required": [
+        "secao",
+        "texto"
+      ],
+      "title": "SecaoDocumentacao",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Saída de GET /documentacao: a página inteira, seção por seção, na ordem da wiki (sem as seções revogadas).",
+  "properties": {
+    "pagina": {
+      "title": "Pagina",
+      "type": "string"
+    },
+    "titulo": {
+      "title": "Titulo",
+      "type": "string"
+    },
+    "tipo": {
+      "title": "Tipo",
+      "type": "string"
+    },
+    "secoes": {
+      "items": {
+        "$ref": "#/$defs/SecaoDocumentacao"
+      },
+      "title": "Secoes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "pagina",
+    "titulo",
+    "tipo",
+    "secoes"
+  ],
+  "title": "Documentacao",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/Documentacao.schema.json",
+  "x-versao-contrato": "1.5.0"
+}

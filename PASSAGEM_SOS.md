@@ -1,9 +1,18 @@
 # sos-ia → sessão do SOS: o que mudou e o que o SOS precisa fazer (08/11/2026)
 
 O serviço sos-ia (núcleo da abertura de chamados com IA) está pronto para a integração. O motor real da entrevista funciona de
-ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.4.0** (aditivo: nenhum campo ou
+ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.5.0** (aditivo: nenhum campo ou
 rota existente mudou de significado, e os campos novos de entrada são opcionais). Os JSON Schemas de cada endpoint ficam em
 `contrato_api/`, com o `openapi.json`.
+
+**Novo na 1.5.0 (seção 4.8; pedido `docs/sosia-1.5.0-menu-e-documentacao.md`):**
+- `GET /sistemas/{cd}/menus?sigla=`: menu dos sistemas que não são PHP (o GAI vem do `.mmb`, com a árvore inteira, e mais 39
+  sistemas vêm pelos caminhos citados na wiki);
+- `ponto_partida` na criação: entra na busca e preenche "onde ocorre" ou "funcionalidade", que deixam de ser perguntados;
+- `documentos` no estado e `GET /documentacao`: os casos de uso que o RAG achou, para o usuário ler no SOS;
+- `documentos_lidos` na confirmação.
+
+Quando mandar `ponto_partida`, deixe de pôr "Menu: …" no começo do relato.
 
 **Correção 1.4.1 (o SOS não muda nada; pedido 1.3.3 do teste com usuário):**
 - a pergunta de integração não repete mais o item "outros sistemas" nos pedidos evolutivos;
@@ -60,6 +69,8 @@ obrigatório faltando: o usuário não precisa recomeçar.
 | `POST /entrevistas/{id}/confirmacao/chamados` **(novo, 1.2.0)** | `VinculoChamados` | `Confirmacao` |
 | `GET /solicitacoes/{cd}/escopo` **(novo, 1.2.0)** | — | `EscopoChamado` |
 | `GET /confirmacoes/pendentes?horas=1` **(novo, 1.2.0)** | — | `EntrevistaPendente[]` |
+| `GET /sistemas/{cd_sistema}/menus?sigla=GAI` **(novo, 1.5.0)** | — | `Menus` |
+| `GET /documentacao?pagina=…&entrevista=…` **(novo, 1.5.0)** | — | `Documentacao` |
 
 `/saude`: `ok` agora exige também `banco_app=true` (banco da aplicação no ar).
 
@@ -72,7 +83,7 @@ Erros, sempre no formato `{erro, detalhe}`:
 | Código | Quando |
 |---|---|
 | 401 | token errado |
-| 404 | entrevista não existe; em `/solicitacoes/{cd}/escopo`, chamado que não veio do fluxo novo |
+| 404 | entrevista não existe; em `/solicitacoes/{cd}/escopo`, chamado que não veio do fluxo novo; em `/documentacao`, página que não é da wiki do sistema da entrevista |
 | 409 | `/regra` sem regra documentada, ou já decidida; `/respostas` ou `/regra` numa entrevista CONFIRMADA; as regras da confirmação (4.5) |
 | 422 | corpo inválido; requisito com segmento inexistente; tipo de chamado repetido; 2 chamados sem `cd_pacote` |
 | 500 | erro interno |
@@ -257,6 +268,53 @@ Saída (`EscopoConfirmado`), além do que já vinha:
 - Correção junto: "não sei" no relato ou numa resposta disparava a pergunta de integração com o **SEI** (o "sei" de "não sei").
   Não dispara mais.
 
+### 4.8 Menu e documentação (novo na 1.5.0) — `novaAbertura.asp` e `confirmarAbertura.asp`
+**Menus.** Para os sistemas que não são PHP, o SOS pede `GET /sistemas/{cd_sistema}/menus?sigla=<sigla>`. A ordem de prioridade é:
+- o menu próprio do sistema (`fonte` = `forms`, e depois `benner`, `hope` e `agendamento`, quando houver);
+- senão, os caminhos citados na wiki (`wiki`);
+- senão, `fonte: "nenhuma"` com `menus: []`. Nesse caso o SOS mostra o campo livre.
+
+Sigla desconhecida também dá 200 com `nenhuma`. Os PHP continuam pelo FGCA, no SOS.
+
+```json
+{ "fonte": "forms", "modulos": [],
+  "menus": [ { "id": "CADASTRO_MENU.CADASTRO_NUNEG", "pai": "MAIN_MENU.CADASTRO", "nome": "NUGIV", "folha": false,
+               "caminho": "Cadastro > NUGIV", "detalhe": null, "modulo": null },
+             { "id": "CADATRO_NUNEG_MENU.PARCELAMENTO_RESÍDUO", "pai": "CADASTRO_MENU.CADASTRO_NUNEG", "nome": "Parcelamento Resíduo",
+               "folha": true, "caminho": "Cadastro > NUGIV > Parcelamento Resíduo", "detalhe": null, "modulo": null } ] }
+```
+- **Ordem:** os itens vêm em ordem de leitura, com cada item seguido dos filhos. Quem tem `folha: false` só agrupa.
+- **Fonte `wiki`:** vem só com folhas, com `pai` nulo e o `caminho` completo. Mostre como lista com busca.
+- **Cobertura hoje:** o GAI tem 187 itens pelo `.mmb`. Outros 39 sistemas vêm pela wiki (ex.: GRH 38, GAD 22, BENNER 20, GOP 2), e os demais dão `nenhuma`. Os outros sistemas FORMS entram quando os `.mmb` chegarem.
+- **Volume:** a resposta pode ter centenas de itens; guarde-a na sessão.
+
+**Ponto de partida.** Na criação, mande o item escolhido em `ponto_partida`:
+```json
+{ "cd_sistema": 1, "sigla": "GAI", "intencao": "PAROU_DE_FUNCIONAR", "relato": "Ao tentar salvar dá erro…",
+  "ponto_partida": { "caminho": "Cadastro > NUGIV > Parcelamento Resíduo", "menu_id": "CADATRO_NUNEG_MENU.PARCELAMENTO_RESÍDUO",
+                     "fonte": "forms", "detalhe": null } }
+```
+- **Campos:** `fonte` é `fgca` (menu PHP do SOS), `livre` (o usuário digitou) ou a `fonte` do `/menus`. `caminho` tem até 300 caracteres e `menu_id` é o `MenuItem.id`, nulo quando `fonte` é `livre`.
+- **Corretivo:** preenche `onde_ocorre` com "Menu: Cadastro > NUGIV > Parcelamento Resíduo". Em `fonte` livre, o texto fica como o usuário escreveu.
+- **Evolutivo existente:** preenche `funcionalidade`. Esses itens não são perguntados.
+- **Algo novo:** o caminho é "onde ficaria". Vai só para o contexto da IA e não preenche nenhum item.
+- **Busca:** o caminho entra na consulta do RAG.
+- **Perguntas:** a IA pergunta a partir dali ("Em Cadastro > NUGIV > Parcelamento Resíduo, o que você faz até aparecer o erro?").
+- **Texto do chamado:** o caminho aparece em INFORMAÇÕES DO PEDIDO, como "Onde ocorre" ou "Funcionalidade que será alterada".
+- **Dado pessoal:** um caminho digitado (`livre`) é tratado como o relato e anonimizado.
+
+**Documentação relacionada.** `EstadoEntrevista.documentos` traz as páginas que o RAG achou:
+```json
+"documentos": [ { "pagina": "sistemas:gai:documentacao_tecnica:caso_de_uso:uc021:inicio",
+                  "titulo": "UC021 - Cadastrar Parcelamento de Resíduo", "tipo": "caso_de_uso", "secao": "…", "similaridade": 0.63 } ]
+```
+- **O que vem:** até 5 páginas, uma vez cada, só `caso_de_uso`, `user_story` e `regras_de_negocio`, sem as revogadas. A lista vem vazia quando o sistema não tem wiki.
+- **Texto da página:** sai de `GET /documentacao?pagina=<pagina>&entrevista=<id>`, no formato `{pagina, titulo, tipo, secoes:[{secao, texto}]}`, com as seções na ordem da wiki (versão mais recente, sem as riscadas). O texto é Markdown simples da wiki, com tabelas em `|`.
+- **Restrição:** só páginas `sistemas:<sistema da entrevista>:…`; as demais dão 404. Não há link para a DokuWiki.
+- **Na confirmação:** `EscopoEditado.documentos_lidos` leva até 10 ids de página que o usuário abriu ou marcou como "é isto que eu uso". Página fora de `documentos` dá 422. Fica na versão 1 do escopo, junto com o `ponto_partida`, para a Fase 3.
+
+**Funcionalidades do catálogo.** `candidatos_funcionalidade` e `candidatos_confirmados` continuam no contrato (para a Sustentação), mas a tela do usuário não precisa mais mostrar nem mandar.
+
 ## 5. Regras do fluxo (determinísticas, não dependem do LLM)
 - No máximo **2 rodadas** de perguntas do LLM e **5 perguntas** por rodada. `pronto=true` → chamar `/contrato`.
 - Depois das 2 rodadas, se ainda faltar item obrigatório: rodadas de complemento até completar (4.6). `pronto=true` só quando não
@@ -284,6 +342,9 @@ O mock reage a palavras do relato:
 - "Não sei informar" vem como opção nos itens que aceitam, e funciona como no real (4.7).
 - A confirmação (4.5) segue as mesmas regras do motor real, em memória: um relato misto ("… e também …") gera 2 grupos.
 - O complemento (4.6) também: responda "ok" nas 2 rodadas para ver `complemento=true`.
+- 1.5.0: `/sistemas/{cd}/menus` devolve um menu de exemplo de 2 níveis (`fonte: "wiki"`) para qualquer sistema; toda entrevista
+  traz 2 `documentos` fixos, cujo texto sai no `/documentacao`; com `ponto_partida`, `onde_ocorre` / `funcionalidade` já vêm
+  preenchidos e não são perguntados.
 
 No mock, `analise_ia` é sempre `false`. O estado do mock some quando o container reinicia.
 

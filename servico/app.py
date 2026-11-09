@@ -15,9 +15,9 @@ import logging
 
 from nucleo import config, db, llm
 from nucleo.entrevista.confirmacao import ConfirmacaoInvalida, EscopoInvalido
-from nucleo.entrevista.modelos import (Confirmacao, Contrato, DecisaoRegraDocumentada, EntrevistaPendente, Erro, EscopoChamado,
-                                       EscopoConfirmado, EscopoEditado, EstadoEntrevista, NovaEntrevista, Respostas, Saude,
-                                       VinculoChamados)
+from nucleo.entrevista.modelos import (Confirmacao, Contrato, DecisaoRegraDocumentada, Documentacao, EntrevistaPendente, Erro,
+                                       EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista, Menus, NovaEntrevista,
+                                       Respostas, Saude, VinculoChamados)
 
 class JSONUtf8(JSONResponse):
     """O proxy ASP (MSXML2.ServerXMLHTTP) decide a codificação pelo cabeçalho: charset explícito."""
@@ -167,3 +167,20 @@ def escopo_do_chamado(cd: int):
 def confirmacoes_pendentes(horas: int = Query(default=1, ge=0, le=720)):
     """Entrevistas PENDENTE há mais de `horas`: o SOS pode ter gravado o chamado sem conseguir chamar /confirmacao/chamados."""
     return _motor().pendentes(horas)
+
+
+@app.get("/sistemas/{cd_sistema}/menus", response_model=Menus, responses=ERROS, dependencies=[Depends(exige_token)])
+def menus_do_sistema(cd_sistema: int, sigla: str = Query(min_length=1, max_length=40)):
+    """Catálogo de menus do sistema (1.5.0): fonte própria (FORMS: .mmb) > wiki > "nenhuma" (menus vazio; o SOS mostra campo
+    livre). Sigla desconhecida também dá 200 com "nenhuma". Pode ter centenas de itens: o SOS guarda o resultado na sessão."""
+    return _motor().menus(cd_sistema, sigla)
+
+
+@app.get("/documentacao", response_model=Documentacao, responses=ERROS, dependencies=[Depends(exige_token)])
+def documentacao(pagina: str = Query(min_length=1, max_length=300), entrevista: str = Query(min_length=1, max_length=64)):
+    """Texto de uma página de `EstadoEntrevista.documentos` (1.5.0), seção por seção. 404 se a entrevista não existe ou se a página
+    não é da wiki do sistema dela (só `sistemas:<sistema>:…`)."""
+    try:
+        return _motor().documentacao(pagina, entrevista)
+    except KeyError:
+        raise HTTPException(404, "página não encontrada para esta entrevista")

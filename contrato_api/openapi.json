@@ -879,6 +879,210 @@
           }
         }
       }
+    },
+    "/sistemas/{cd_sistema}/menus": {
+      "get": {
+        "summary": "Menus Do Sistema",
+        "description": "Catálogo de menus do sistema (1.5.0): fonte própria (FORMS: .mmb) > wiki > \"nenhuma\" (menus vazio; o SOS mostra campo\nlivre). Sigla desconhecida também dá 200 com \"nenhuma\". Pode ter centenas de itens: o SOS guarda o resultado na sessão.",
+        "operationId": "menus_do_sistema_sistemas__cd_sistema__menus_get",
+        "parameters": [
+          {
+            "name": "cd_sistema",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Cd Sistema"
+            }
+          },
+          {
+            "name": "sigla",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "title": "Sigla"
+            }
+          },
+          {
+            "name": "x-sosia-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Sosia-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Menus"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/documentacao": {
+      "get": {
+        "summary": "Documentacao",
+        "description": "Texto de uma página de `EstadoEntrevista.documentos` (1.5.0), seção por seção. 404 se a entrevista não existe ou se a página\nnão é da wiki do sistema dela (só `sistemas:<sistema>:…`).",
+        "operationId": "documentacao_documentacao_get",
+        "parameters": [
+          {
+            "name": "pagina",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300,
+              "title": "Pagina"
+            }
+          },
+          {
+            "name": "entrevista",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "title": "Entrevista"
+            }
+          },
+          {
+            "name": "x-sosia-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Sosia-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Documentacao"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -945,7 +1149,8 @@
           "nome",
           "similaridade"
         ],
-        "title": "CandidatoFuncionalidade"
+        "title": "CandidatoFuncionalidade",
+        "description": "Função do catálogo de PF parecida com o pedido. 1.5.0: a tela do usuário não mostra mais (os nomes são os das contagens,\nnão os da tela); fica no contrato para a Sustentação."
       },
       "ChamadoGerado": {
         "properties": {
@@ -976,7 +1181,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.4.1"
+            "default": "1.5.0"
           },
           "situacao": {
             "type": "string",
@@ -1021,7 +1226,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.4.1"
+            "default": "1.5.0"
           },
           "titulo": {
             "type": "string",
@@ -1169,6 +1374,83 @@
         "title": "DecisaoRegraDocumentada",
         "description": "Entrada de POST /entrevistas/{id}/regra."
       },
+      "Documentacao": {
+        "properties": {
+          "pagina": {
+            "type": "string",
+            "title": "Pagina"
+          },
+          "titulo": {
+            "type": "string",
+            "title": "Titulo"
+          },
+          "tipo": {
+            "type": "string",
+            "title": "Tipo"
+          },
+          "secoes": {
+            "items": {
+              "$ref": "#/components/schemas/SecaoDocumentacao"
+            },
+            "type": "array",
+            "title": "Secoes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pagina",
+          "titulo",
+          "tipo",
+          "secoes"
+        ],
+        "title": "Documentacao",
+        "description": "Saída de GET /documentacao: a página inteira, seção por seção, na ordem da wiki (sem as seções revogadas)."
+      },
+      "Documento": {
+        "properties": {
+          "pagina": {
+            "type": "string",
+            "title": "Pagina",
+            "description": "id da página (sistemas:…); é o que vai em GET /documentacao?pagina= e em documentos_lidos"
+          },
+          "titulo": {
+            "type": "string",
+            "title": "Titulo"
+          },
+          "tipo": {
+            "type": "string",
+            "title": "Tipo",
+            "description": "caso_de_uso, user_story ou regras_de_negocio"
+          },
+          "secao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secao",
+            "description": "seção da página que mais se parece com o pedido"
+          },
+          "similaridade": {
+            "type": "number",
+            "title": "Similaridade"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pagina",
+          "titulo",
+          "tipo",
+          "similaridade"
+        ],
+        "title": "Documento",
+        "description": "Página da wiki que o RAG achou para o pedido (1.5.0); o texto vem de GET /documentacao."
+      },
       "EntrevistaPendente": {
         "properties": {
           "id": {
@@ -1290,7 +1572,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.4.1"
+            "default": "1.5.0"
           },
           "situacao": {
             "type": "string",
@@ -1417,7 +1699,17 @@
             "type": "array",
             "maxItems": 5,
             "title": "Candidatos Confirmados",
-            "description": "ids (CandidatoFuncionalidade.id) das funcionalidades que o usuário marcou como afetadas; só ids mostrados nesta entrevista"
+            "description": "ids (CandidatoFuncionalidade.id) das funcionalidades que o usuário marcou como afetadas; só ids mostrados nesta entrevista (1.5.0: a tela do usuário não manda mais; fica para a Sustentação)"
+          },
+          "documentos_lidos": {
+            "items": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Documentos Lidos",
+            "description": "1.5.0: Documento.pagina das páginas que o usuário abriu ou marcou como 'é isto que eu uso'; só páginas de EstadoEntrevista.documentos"
           }
         },
         "additionalProperties": false,
@@ -1439,7 +1731,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.4.1"
+            "default": "1.5.0"
           },
           "rodada": {
             "type": "integer",
@@ -1472,6 +1764,15 @@
             },
             "type": "array",
             "title": "Candidatos Funcionalidade"
+          },
+          "documentos": {
+            "items": {
+              "$ref": "#/components/schemas/Documento"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Documentos",
+            "description": "1.5.0: casos de uso, user stories e regras achados pelo RAG (até 5, uma vez por página, sem os revogados); vazia quando o sistema não tem wiki"
           },
           "regra_documentada": {
             "anyOf": [
@@ -1533,6 +1834,32 @@
         ],
         "title": "EstadoEntrevista",
         "description": "Resposta de POST /entrevistas, POST /entrevistas/{id}/respostas e GET /entrevistas/{id}."
+      },
+      "FonteMenu": {
+        "type": "string",
+        "enum": [
+          "forms",
+          "benner",
+          "hope",
+          "agendamento",
+          "wiki",
+          "nenhuma"
+        ],
+        "title": "FonteMenu",
+        "description": "De onde veio o catálogo de menus de um sistema (1.5.0)."
+      },
+      "FontePontoPartida": {
+        "type": "string",
+        "enum": [
+          "fgca",
+          "livre",
+          "forms",
+          "benner",
+          "hope",
+          "agendamento",
+          "wiki"
+        ],
+        "title": "FontePontoPartida"
       },
       "GrupoChamado": {
         "properties": {
@@ -1636,6 +1963,103 @@
         "title": "Intencao",
         "description": "Opção do cardápio escolhida pelo usuário (a garantia não passa pela IA)."
       },
+      "MenuItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "identificador estável do item dentro do sistema (é o que vai em PontoPartida.menu_id)"
+          },
+          "pai": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pai",
+            "description": "id do pai; nulo na raiz (na fonte wiki, sempre nulo)"
+          },
+          "nome": {
+            "type": "string",
+            "title": "Nome",
+            "description": "rótulo como o usuário vê"
+          },
+          "folha": {
+            "type": "boolean",
+            "title": "Folha",
+            "description": "true = abre uma tela; false = só agrupa outros itens"
+          },
+          "caminho": {
+            "type": "string",
+            "title": "Caminho",
+            "description": "\"Pai > Filho > Item\", sem a sigla do sistema"
+          },
+          "detalhe": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detalhe"
+          },
+          "modulo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modulo",
+            "description": "módulo (Benner); nulo nos demais"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "nome",
+          "folha",
+          "caminho"
+        ],
+        "title": "MenuItem"
+      },
+      "Menus": {
+        "properties": {
+          "fonte": {
+            "$ref": "#/components/schemas/FonteMenu"
+          },
+          "modulos": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Modulos",
+            "description": "módulos do Benner; vazia nos demais"
+          },
+          "menus": {
+            "items": {
+              "$ref": "#/components/schemas/MenuItem"
+            },
+            "type": "array",
+            "title": "Menus"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "fonte"
+        ],
+        "title": "Menus",
+        "description": "Saída de GET /sistemas/{cd_sistema}/menus. Itens na ordem de leitura (cada um seguido dos filhos)."
+      },
       "Natureza": {
         "type": "string",
         "enum": [
@@ -1676,6 +2100,17 @@
             "type": "array",
             "maxItems": 5,
             "title": "Imagens"
+          },
+          "ponto_partida": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PontoPartida"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "1.5.0: com ele, não ponha mais 'Menu: …' no relato"
           }
         },
         "additionalProperties": false,
@@ -1747,6 +2182,53 @@
           "texto"
         ],
         "title": "Pergunta"
+      },
+      "PontoPartida": {
+        "properties": {
+          "caminho": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 2,
+            "title": "Caminho",
+            "description": "\"Cadastro > NUGIV > Parcelamento Resíduo\" ou o texto livre"
+          },
+          "detalhe": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detalhe"
+          },
+          "menu_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Menu Id",
+            "description": "MenuItem.id (nulo em fonte livre)"
+          },
+          "fonte": {
+            "$ref": "#/components/schemas/FontePontoPartida"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "caminho",
+          "fonte"
+        ],
+        "title": "PontoPartida",
+        "description": "Por onde o usuário entra no sistema (1.5.0). Entra na busca do RAG junto com o relato e preenche `onde_ocorre`\n(corretivo) ou `funcionalidade` (evolutivo existente), que deixam de ser perguntados; em \"algo novo\" é \"onde ficaria\"."
       },
       "RegraDocumentada": {
         "properties": {
@@ -1971,7 +2453,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.4.1"
+            "default": "1.5.0"
           },
           "mock": {
             "type": "boolean",
@@ -2012,6 +2494,25 @@
           "modo_pii"
         ],
         "title": "Saude"
+      },
+      "SecaoDocumentacao": {
+        "properties": {
+          "secao": {
+            "type": "string",
+            "title": "Secao"
+          },
+          "texto": {
+            "type": "string",
+            "title": "Texto"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "secao",
+          "texto"
+        ],
+        "title": "SecaoDocumentacao"
       },
       "Segmento": {
         "properties": {

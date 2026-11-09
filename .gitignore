@@ -5,3 +5,5 @@ __pycache__/
 .pytest_cache/
 *.log
 dados/
+# fontes dos sistemas (ex.: .mmb do Oracle Forms): código da Terracap, com nomes de pessoas nos comentários
+fontes/

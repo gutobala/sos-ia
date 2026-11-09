@@ -7,7 +7,7 @@ from typing import Annotated, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-VERSAO_CONTRATO = "1.4.1"
+VERSAO_CONTRATO = "1.5.0"
 # 1.1.0 (05/11/2026, aditiva): decisão do usuário sobre a regra documentada — POST /entrevistas/{id}/regra, campo
 #        `decisao_regra` no estado e no contrato, `regra_documentada` no contrato, slot pseudo "decisao_regra" em `faltando`.
 # 1.2.0 (05/11/2026, aditiva): confirmação do Escopo do Pedido — POST /entrevistas/{id}/confirmacao (um chamado por tipo, no
@@ -28,6 +28,11 @@ VERSAO_CONTRATO = "1.4.1"
 #        (SEI/API maiúsculas, Caixa Econômica, sem "enviar"/"retorno"); gatilho de integração não repete o item "outros
 #        sistemas" nos evolutivos; item repetido cita a resposta anterior, com pergunta/dica por roteiro; número de chamado
 #        reaproveitado vai para o histórico; aquecimento da busca e evento "tempos" na criação.
+# 1.5.0 (08/11/2026, aditiva; pedido docs/sosia-1.5.0-menu-e-documentacao.md): GET /sistemas/{cd}/menus (catálogo de menus:
+#        FORMS pelo .mmb, wiki como reserva); `NovaEntrevista.ponto_partida` (por onde o usuário entra no sistema: entra na busca
+#        e preenche onde_ocorre/funcionalidade); `EstadoEntrevista.documentos` + GET /documentacao (casos de uso achados pelo
+#        RAG, para ler no SOS); `EscopoEditado.documentos_lidos`. As caixas de funcionalidades saem da tela do usuário:
+#        `candidatos_funcionalidade` / `candidatos_confirmados` ficam no contrato para a Sustentação.
 
 
 class Base(BaseModel):
@@ -59,12 +64,59 @@ class Imagem(Base):
     base64: str = Field(description="conteúdo da imagem em base64 (sem o prefixo data:)", max_length=7_000_000)
 
 
+class FonteMenu(str, Enum):
+    """De onde veio o catálogo de menus de um sistema (1.5.0)."""
+    FORMS = "forms"                  # .mmb do Oracle Forms (hierarquia completa)
+    BENNER = "benner"
+    HOPE = "hope"
+    AGENDAMENTO = "agendamento"
+    WIKI = "wiki"                    # caminhos citados na wiki: só folhas, com o caminho completo
+    NENHUMA = "nenhuma"              # nada no catálogo: o SOS mostra um campo livre
+
+
+class MenuItem(Base):
+    id: str = Field(description="identificador estável do item dentro do sistema (é o que vai em PontoPartida.menu_id)")
+    pai: Optional[str] = Field(default=None, description="id do pai; nulo na raiz (na fonte wiki, sempre nulo)")
+    nome: str = Field(description="rótulo como o usuário vê")
+    folha: bool = Field(description="true = abre uma tela; false = só agrupa outros itens")
+    caminho: str = Field(description='"Pai > Filho > Item", sem a sigla do sistema')
+    detalhe: Optional[str] = None
+    modulo: Optional[str] = Field(default=None, description="módulo (Benner); nulo nos demais")
+
+
+class Menus(Base):
+    """Saída de GET /sistemas/{cd_sistema}/menus. Itens na ordem de leitura (cada um seguido dos filhos)."""
+    fonte: FonteMenu
+    modulos: list[str] = Field(default_factory=list, description="módulos do Benner; vazia nos demais")
+    menus: list[MenuItem] = Field(default_factory=list)
+
+
+class FontePontoPartida(str, Enum):
+    FGCA = "fgca"                    # menu dos sistemas PHP, montado pelo SOS a partir do FGCA
+    LIVRE = "livre"                  # o usuário digitou
+    FORMS = "forms"
+    BENNER = "benner"
+    HOPE = "hope"
+    AGENDAMENTO = "agendamento"
+    WIKI = "wiki"
+
+
+class PontoPartida(Base):
+    """Por onde o usuário entra no sistema (1.5.0). Entra na busca do RAG junto com o relato e preenche `onde_ocorre`
+    (corretivo) ou `funcionalidade` (evolutivo existente), que deixam de ser perguntados; em "algo novo" é "onde ficaria"."""
+    caminho: str = Field(min_length=2, max_length=300, description='"Cadastro > NUGIV > Parcelamento Resíduo" ou o texto livre')
+    detalhe: Optional[str] = Field(default=None, max_length=500)
+    menu_id: Optional[str] = Field(default=None, max_length=300, description="MenuItem.id (nulo em fonte livre)")
+    fonte: FontePontoPartida
+
+
 class NovaEntrevista(Base):
     cd_sistema: int = Field(description="CD_SISTEMA do SOS")
     sigla: str = Field(max_length=40, description="sigla do sistema (ex.: GAI)")
     intencao: Intencao
     relato: str = Field(min_length=10, max_length=20000, description="relato livre do usuário")
     imagens: list[Imagem] = Field(default_factory=list, max_length=5)
+    ponto_partida: Optional[PontoPartida] = Field(default=None, description="1.5.0: com ele, não ponha mais 'Menu: …' no relato")
 
 
 class Slot(Base):
@@ -90,7 +142,31 @@ class Origem(str, Enum):
     INFERIDO = "inferido"            # hipótese de solução (ex.: "criar uma rubrica")
 
 
+class Documento(Base):
+    """Página da wiki que o RAG achou para o pedido (1.5.0); o texto vem de GET /documentacao."""
+    pagina: str = Field(description="id da página (sistemas:…); é o que vai em GET /documentacao?pagina= e em documentos_lidos")
+    titulo: str
+    tipo: str = Field(description="caso_de_uso, user_story ou regras_de_negocio")
+    secao: Optional[str] = Field(default=None, description="seção da página que mais se parece com o pedido")
+    similaridade: float
+
+
+class SecaoDocumentacao(Base):
+    secao: str
+    texto: str
+
+
+class Documentacao(Base):
+    """Saída de GET /documentacao: a página inteira, seção por seção, na ordem da wiki (sem as seções revogadas)."""
+    pagina: str
+    titulo: str
+    tipo: str
+    secoes: list[SecaoDocumentacao]
+
+
 class CandidatoFuncionalidade(Base):
+    """Função do catálogo de PF parecida com o pedido. 1.5.0: a tela do usuário não mostra mais (os nomes são os das contagens,
+    não os da tela); fica no contrato para a Sustentação."""
     id: Optional[int] = Field(default=None, description="id da função no catálogo; é o que vai em EscopoEditado.candidatos_confirmados")
     nome: str
     tipo_ifpug: Optional[str] = None
@@ -141,6 +217,9 @@ class EstadoEntrevista(Base):
                                                          "depois das 2 rodadas (roteiro fixo, sem IA)")
     segmentos: list[Segmento]
     candidatos_funcionalidade: list[CandidatoFuncionalidade] = Field(default_factory=list)
+    documentos: list[Documento] = Field(default_factory=list, max_length=5,
+                                        description="1.5.0: casos de uso, user stories e regras achados pelo RAG (até 5, uma vez por "
+                                                    "página, sem os revogados); vazia quando o sistema não tem wiki")
     regra_documentada: Optional[RegraDocumentada] = None
     decisao_regra: Optional[DecisaoRegra] = Field(default=None, description="null com regra_documentada presente = o SOS deve "
                                                   "perguntar ao usuário e chamar POST /entrevistas/{id}/regra")
@@ -248,7 +327,11 @@ class EscopoEditado(Base):
     cd_usuario: Optional[int] = Field(default=None, description="session(\"CD_USUARIO\") do SOS, para auditoria (nunca o nome)")
     candidatos_confirmados: list[int] = Field(default_factory=list, max_length=5,
                                               description="ids (CandidatoFuncionalidade.id) das funcionalidades que o usuário "
-                                                          "marcou como afetadas; só ids mostrados nesta entrevista")
+                                                          "marcou como afetadas; só ids mostrados nesta entrevista (1.5.0: a "
+                                                          "tela do usuário não manda mais; fica para a Sustentação)")
+    documentos_lidos: list[Annotated[str, Field(max_length=300)]] = Field(
+        default_factory=list, max_length=10, description="1.5.0: Documento.pagina das páginas que o usuário abriu ou marcou como "
+                                                         "'é isto que eu uso'; só páginas de EstadoEntrevista.documentos")
 
 
 class RequisitoEscopo(Base):

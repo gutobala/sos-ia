@@ -476,6 +476,97 @@ def test_confirmacao_com_inferido_removido_e_funcionalidade_confirmada(ambiente,
     assert ev["conteudo"] == dict(confirmados=[], removidos=[2])
 
 
+# ---------------------------------------------------------------- 1.5.0: ponto de partida e documentação
+def com_ponto(intencao, caminho="Cadastro > NUGIV > Parcelamento Resíduo", fonte="forms", relato=None):
+    from nucleo.entrevista.modelos import PontoPartida
+    return NovaEntrevista(cd_sistema=1, sigla="GAI", intencao=intencao,
+                          relato=relato or "Ao salvar o parcelamento aparece erro 500 desde ontem.",
+                          ponto_partida=PontoPartida(caminho=caminho, fonte=fonte, menu_id="CADATRO_NUNEG_MENU.PARCELAMENTO_RESÍDUO"))
+
+
+def test_ponto_de_partida_no_corretivo_preenche_onde_ocorre_e_entra_na_busca(ambiente, monkeypatch):
+    consultas = []
+    monkeypatch.setattr(M, "rag", lambda conn, intencao, sid, wiki, texto: (consultas.append(texto) or [dict(d) for d in DOCS], []))
+    mot, usa = ambiente
+    # o LLM tenta trocar o onde_ocorre e perguntar de novo: o menu escolhido vale e a pergunta sai
+    f = usa(resp_entrevista(slots={"onde_ocorre": "tela"}, perguntas=[(1, "onde_ocorre", "Em que tela?")]))
+    e = mot.criar(com_ponto(Intencao.PAROU_DE_FUNCIONAR))
+    assert consultas[0].startswith("Menu: Cadastro > NUGIV > Parcelamento Resíduo.\n")
+    onde = next(x for x in e.segmentos[0].slots if x.codigo == "onde_ocorre")
+    assert onde.valor == "Menu: Cadastro > NUGIV > Parcelamento Resíduo" and onde.preenchido
+    assert "onde_ocorre" not in [p.slot for p in e.perguntas]
+    assert "NÃO pergunte onde é" in f.prompts[0][1]
+    with db.db_app() as c:
+        ev = c.execute("SELECT conteudo FROM app.entrevista_evento WHERE entrevista_id = %s AND tipo = 'ponto_partida'", (e.id,)).fetchone()
+    assert ev["conteudo"] == dict(fonte="forms", menu_id="CADATRO_NUNEG_MENU.PARCELAMENTO_RESÍDUO")
+
+
+def test_ponto_de_partida_no_evolutivo_e_no_algo_novo(ambiente, monkeypatch):
+    mot, usa = ambiente
+    usa(resp_entrevista(tipo="EVOLUTIVO_EXISTENTE"), RuntimeError("LLM fora"))
+    e = mot.criar(com_ponto(Intencao.MUDAR_EXISTENTE, relato="Quero que o parcelamento aceite 25% de desconto no 2º edital."))
+    func = next(x for x in e.segmentos[0].slots if x.codigo == "funcionalidade")
+    assert func.valor == "Menu: Cadastro > NUGIV > Parcelamento Resíduo" and "funcionalidade" not in [p.slot for p in e.perguntas]
+    # roteiro fixo (LLM fora) também usa o ponto de partida; fonte livre fica como o usuário escreveu
+    e2 = mot.criar(com_ponto(Intencao.PAROU_DE_FUNCIONAR, caminho="tela de baixa manual", fonte="livre"))
+    assert not e2.analise_ia
+    assert next(x for x in e2.segmentos[0].slots if x.codigo == "onde_ocorre").valor == "tela de baixa manual"
+    f = usa(resp_entrevista(tipo="EVOLUTIVO_NOVO"))
+    e3 = mot.criar(com_ponto(Intencao.ALGO_NOVO, caminho="Relatório > NUGEC", relato="Preciso de um relatório novo de inadimplência."))
+    assert all(not (x.valor or "").startswith("Menu:") for x in e3.segmentos[0].slots)
+    assert "ONDE FICARIA" in f.prompts[0][1]
+
+
+def test_documentos_e_documentacao(ambiente, monkeypatch):
+    from nucleo.entrevista import confirmacao as cf
+    from nucleo.entrevista.modelos import EscopoEditado
+    uc = "sistemas:gai:documentacao_tecnica:caso_de_uso:uc021:inicio"
+    docs = [dict(pagina=uc, titulo="UC021", secao="FLUXO", tipo="caso_de_uso", texto="x", cos=0.8),
+            dict(pagina=uc, titulo="UC021", secao="OBS", tipo="caso_de_uso", texto="y", cos=0.7),            # mesma página
+            dict(pagina="sistemas:gai:msg", titulo="Mensagens", secao="M1", tipo="mensagens", texto="z", cos=0.7),  # tipo fora
+            dict(DOCS[1])]
+    monkeypatch.setattr(M, "rag", lambda conn, intencao, sid, wiki, texto: ([dict(d) for d in docs], []))
+    mot, usa = ambiente
+    usa(resp_entrevista(slots=dict(CHEIO_MENOS_DESDE, desde_quando_quem="Desde ontem, todos")), CONTRATO_LLM)
+    e = mot.criar(nova())
+    assert [(d.pagina, d.tipo) for d in e.documentos] == [(uc, "caso_de_uso"), ("sistemas:gai:regras", "regras_de_negocio")]
+    assert mot.obter(e.id).documentos == e.documentos
+    pag = mot.documentacao(uc, e.id)                       # página real da wiki do GAI no banco do núcleo
+    assert pag.tipo == "caso_de_uso" and pag.secoes and "UC021" in pag.titulo
+    for outra in ("sistemas:gop:qualquer", "wiki:gai:uc021", uc + "x"):
+        with pytest.raises(KeyError):
+            mot.documentacao(outra, e.id)
+    with pytest.raises(KeyError):
+        mot.documentacao(uc, "00000000-0000-0000-0000-000000000000")
+    k = mot.contrato(e.id)
+    base = dict(titulo=k.titulo, objetivo=k.objetivo, requisitos=[dict(segmento=1, descricao=k.requisitos[0].descricao, n_contrato=1)])
+    with pytest.raises(cf.EscopoInvalido):
+        mot.confirmacao(e.id, EscopoEditado(**base, documentos_lidos=["sistemas:gai:msg"]))
+    mot.confirmacao(e.id, EscopoEditado(**base, documentos_lidos=[uc, uc]))
+    with db.db_app() as c:
+        v1 = c.execute("SELECT conteudo FROM app.entrevista_escopo WHERE entrevista_id = %s AND versao = 1", (e.id,)).fetchone()
+    assert v1["conteudo"]["documentos_lidos"] == [uc]
+
+
+def test_menus_do_catalogo(ambiente):
+    """Lê o catálogo carregado no banco do núcleo (pulado sem a carga); sigla desconhecida dá "nenhuma"."""
+    mot, _ = ambiente
+    assert mot.menus(999, "SIGLA_QUE_NAO_EXISTE").fonte.value == "nenhuma"
+    with db.db() as c:
+        carregado = c.execute("SELECT to_regclass('apf.menu_sistema') IS NOT NULL AND EXISTS (SELECT 1 FROM apf.menu_sistema "
+                              "WHERE sistema = 'gai' AND fonte = 'forms') AS ok").fetchone()["ok"]
+    if not carregado:
+        pytest.skip("catálogo de menus do GAI não carregado (migracao/carrega_menus.py)")
+    m = mot.menus(1, "gai")
+    assert m.fonte.value == "forms" and len(m.menus) > 180
+    ids = {x.id for x in m.menus}
+    assert all(x.pai is None or x.pai in ids for x in m.menus)
+    vistos = set()
+    for x in m.menus:                                      # ordem de leitura: o pai vem antes do filho
+        assert x.pai is None or x.pai in vistos
+        vistos.add(x.id)
+
+
 def test_id_inexistente(ambiente):
     mot, _ = ambiente
     with pytest.raises(KeyError):

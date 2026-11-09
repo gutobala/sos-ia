@@ -2,6 +2,7 @@
   "$defs": {
     "CandidatoFuncionalidade": {
       "additionalProperties": false,
+      "description": "Função do catálogo de PF parecida com o pedido. 1.5.0: a tela do usuário não mostra mais (os nomes são os das contagens,\nnão os da tela); fica no contrato para a Sustentação.",
       "properties": {
         "id": {
           "anyOf": [
@@ -226,7 +227,7 @@
       "type": "string"
     },
     "versao_contrato": {
-      "default": "1.4.1",
+      "default": "1.5.0",
       "title": "Versao Contrato",
       "type": "string"
     },
@@ -287,5 +288,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/EscopoConfirmado.schema.json",
-  "x-versao-contrato": "1.4.1"
+  "x-versao-contrato": "1.5.0"
 }

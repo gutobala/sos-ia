@@ -221,6 +221,22 @@ def roteiro_da_intencao(intencao):
             Intencao.ALGO_NOVO: TipoSegmento.EVOLUTIVO_NOVO}[intencao]
 
 
+# ---------------------------------------------------------------- ponto de partida (1.5.0)
+SLOT_DO_PONTO = {TipoSegmento.CORRETIVO: "onde_ocorre", TipoSegmento.EVOLUTIVO_EXISTENTE: "funcionalidade"}
+
+
+def slot_do_ponto(tipo):
+    """Item que o ponto de partida preenche: onde ocorre (corretivo) ou a funcionalidade alterada (evolutivo existente).
+    Em "algo novo" o caminho é onde ficaria: vai só para o contexto do prompt."""
+    return SLOT_DO_PONTO.get(TipoSegmento(tipo))
+
+
+def valor_do_ponto(caminho, fonte, detalhe=None):
+    """Texto do item: "Menu: Cadastro > NUGIV > Parcelamento Resíduo"; em fonte livre, como o usuário escreveu."""
+    v = caminho.strip() if fonte == "livre" else f"Menu: {caminho.strip()}"
+    return v + (f" ({detalhe.strip()})" if detalhe and detalhe.strip() else "")
+
+
 SLOT_DECISAO_REGRA = SlotFaltando(segmento=1, slot="decisao_regra", rotulo="Confirmar se o comportamento segue a regra documentada")
 
 

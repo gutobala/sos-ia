@@ -31,13 +31,14 @@ import yaml
 
 from .. import config, embeddings, llm, pii
 from .. import db as dbm
+from ..menus import catalogo as menus_catalogo
 from ..rag import busca, catalogo
 from . import armazem, confirmacao as cf, roteiros
 from .mock import SLOT_PRINCIPAL
 from .modelos import (CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra, DecisaoRegraDocumentada,
-                      EntrevistaPendente, EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista, Integracao, Intencao,
-                      NovaEntrevista, Origem, Pergunta, RegraDocumentada, RequisitoContrato, Respostas, Segmento, TipoRequisito, TipoSegmento,
-                      VersaoEscopo, VinculoChamados)
+                      Documentacao, Documento, EntrevistaPendente, EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista,
+                      Integracao, Intencao, Menus, NovaEntrevista, Origem, Pergunta, RegraDocumentada, RequisitoContrato, Respostas,
+                      SecaoDocumentacao, Segmento, TipoRequisito, TipoSegmento, VersaoEscopo, VinculoChamados)
 
 MAX_RODADAS = 2
 MAX_PERGUNTAS = 5
@@ -47,6 +48,8 @@ PROMPT_ENTREVISTA = os.path.join(config.RAIZ, "prompts", "entrevista_v1.md")
 PROMPT_CONTRATO = os.path.join(config.RAIZ, "prompts", "contrato_v1.md")
 ARQ_GATILHOS = os.path.join(config.RAIZ, "config", "gatilhos.yaml")
 TIPOS_REGRA = ("regras_de_negocio", "mensagens", "caso_de_uso")
+TIPOS_DOCUMENTO = ("caso_de_uso", "user_story", "regras_de_negocio")     # 1.5.0: o que o usuário pode ler no SOS
+MAX_DOCUMENTOS = 5
 NOME_INTENCAO = {Intencao.PAROU_DE_FUNCIONAR: "Algo parou de funcionar", Intencao.MUDAR_EXISTENTE: "Quero mudar algo que já existe",
                  Intencao.ALGO_NOVO: "Preciso de algo novo"}
 RETENCAO_DIAS = int(config.env("SOSIA_RETENCAO_DIAS", "0")) or None
@@ -179,6 +182,43 @@ def sem_riscados(docs):
     return [d for d in docs if not riscado(d)]
 
 
+def documentos(docs):
+    """Documentação relacionada (1.5.0): dos trechos do RAG (já sem os revogados), só casos de uso, user stories e regras de
+    negócio, uma vez por página, na ordem da busca, até 5."""
+    out, vistos = [], set()
+    for d in docs:
+        if d["tipo"] in TIPOS_DOCUMENTO and d["pagina"] not in vistos:
+            vistos.add(d["pagina"])
+            out.append(Documento(pagina=d["pagina"], titulo=d["titulo"] or d["pagina"], tipo=d["tipo"], secao=d["secao"] or None,
+                                 similaridade=d["cos"]))
+    return out[:MAX_DOCUMENTOS]
+
+
+def consulta_rag(est):
+    """Texto da busca: o caminho do menu (as páginas da wiki citam o menu) antes do relato."""
+    p = est.get("ponto")
+    return (f"Menu: {p['caminho']}.\n" if p else "") + est["texto"]
+
+
+def valor_ponto(est, tipo):
+    """(slot, valor) que o ponto de partida preenche no segmento 1 deste tipo, ou (None, None)."""
+    p = est.get("ponto")
+    slot = roteiros.slot_do_ponto(tipo) if p else None
+    return (slot, p["valor"]) if slot else (None, None)
+
+
+def _fmt_ponto(est):
+    p = est.get("ponto")
+    if not p:
+        return "(não informado: pergunte onde, se faltar)"
+    if Intencao(est["intencao"]) == Intencao.ALGO_NOVO:
+        return (f'"{p["caminho"]}" — é ONDE FICARIA o que o usuário quer (não é uma tela que já faz isso). Use como contexto; não '
+                "preencha nenhum item só com ele.")
+    return (f'"{p["caminho"]}" — o usuário já indicou por onde entra no sistema; o item onde_ocorre (corretivo) ou funcionalidade '
+            "(evolutivo) já está preenchido com ele. NÃO pergunte onde é. Pergunte o que acontece a partir dali (corretivo) ou o que "
+            "muda nessa tela (evolutivo), citando o caminho.")
+
+
 # ---------------------------------------------------------------- montagem do prompt
 def _fmt_segs(segs):
     if not segs:
@@ -239,7 +279,7 @@ def prompt_entrevista(est, segs):
     docs = "\n\n".join(f"[{i}] ({d['tipo']}) {d['titulo']} / {d['secao'] or ''}\n{d['texto']}" for i, d in enumerate(est["docs"], 1))
     return (open(PROMPT_ENTREVISTA, encoding="utf-8").read()
             .replace("{{SISTEMA}}", est["sigla"]).replace("{{INTENCAO}}", NOME_INTENCAO[Intencao(est["intencao"])])
-            .replace("{{RODADA}}", str(est["rodada"])).replace("{{RELATO}}", est["texto"])
+            .replace("{{RODADA}}", str(est["rodada"])).replace("{{RELATO}}", est["texto"]).replace("{{PONTO_PARTIDA}}", _fmt_ponto(est))
             .replace("{{RESPOSTAS}}", _fmt_respostas(est)).replace("{{SLOTS_ATUAIS}}", _fmt_segs(segs))
             .replace("{{DECISAO_REGRA}}", _fmt_decisao(est))
             .replace("{{CANDIDATOS}}", cand or "(nenhuma)").replace("{{DOCUMENTACAO}}", docs or "(nenhum trecho encontrado)")
@@ -280,6 +320,9 @@ def aplica(est, resp, pendentes=()):
         for c, v in antigos.get((n, tipo), {}).items():   # o LLM não apaga o que o usuário já respondeu
             if c not in valores or len(valores[c]) < len(v) * 0.5:
                 valores[c] = v
+        slot_p, valor_p = valor_ponto(est, tipo)
+        if n == 1 and slot_p in codigos:                  # 1.5.0: o menu escolhido pelo usuário vale; o LLM não troca
+            valores[slot_p] = valor_p
         segs.append(roteiros.revalida(Segmento(n=n, tipo=tipo, resumo=s["resumo"][:300] or "Pedido", slots=roteiros.slots_vazios(tipo, valores))))
     if not segs:
         segs = segmentos_fixos(est)
@@ -343,8 +386,11 @@ def nota(segs, nota_llm=None):
 
 def segmentos_fixos(est):
     t = roteiros.roteiro_da_intencao(Intencao(est["intencao"]))
-    return [roteiros.revalida(Segmento(n=1, tipo=t, resumo=est["texto"].strip()[:120],
-                                       slots=roteiros.slots_vazios(t, {SLOT_PRINCIPAL[t]: est["texto"].strip()[:1500]})))]
+    valores = {SLOT_PRINCIPAL[t]: est["texto"].strip()[:1500]}
+    slot_p, valor_p = valor_ponto(est, t)
+    if slot_p:
+        valores[slot_p] = valor_p
+    return [roteiros.revalida(Segmento(n=1, tipo=t, resumo=est["texto"].strip()[:120], slots=roteiros.slots_vazios(t, valores)))]
 
 
 def roteiro_fixo(est):
@@ -422,11 +468,24 @@ class Motor:
     def _estado(self, eid, est, analise_ia):
         return EstadoEntrevista(
             id=eid, rodada=min(est["rodada"], 3), pronto=not est["perguntas"], segmentos=_segs(est),
-            candidatos_funcionalidade=self._candidatos(est),
+            candidatos_funcionalidade=self._candidatos(est), documentos=documentos(est["docs"]),
             regra_documentada=RegraDocumentada.model_validate(est["regra"]) if est.get("regra") else None,
             decisao_regra=est.get("decisao"), perguntas=[Pergunta.model_validate(p) for p in est["perguntas"]],
             complemento=bool(est.get("complemento") and est["perguntas"]), nota=est["nota"], dicas_medidor=est["dicas"],
             analise_ia=analise_ia)
+
+    @staticmethod
+    def _ponto(req, conn):
+        """Ponto de partida no estado. Caminho digitado (fonte livre) segue a regra do relato (anonimizado, menos no modo contrato);
+        rótulo de menu não tem dado pessoal."""
+        p = req.ponto_partida
+        if not p:
+            return None
+        livre = p.fonte.value == "livre"
+        caminho = _anonimiza_resposta(p.caminho.strip(), conn, 300) if livre else p.caminho.strip()
+        detalhe = (_anonimiza_resposta(p.detalhe.strip(), conn, 500) if livre else p.detalhe.strip()) if p.detalhe else None
+        return dict(caminho=caminho, detalhe=detalhe, menu_id=p.menu_id, fonte=p.fonte.value,
+                    valor=roteiros.valor_do_ponto(caminho, p.fonte.value, detalhe))
 
     def _carrega(self, conn, eid):
         row = armazem.obter(conn, eid)
@@ -452,11 +511,12 @@ class Motor:
             marca("resolve_sistema_s")
             texto, imgs, notas = pii.prepara(req.relato, [i.model_dump() for i in req.imagens], conn)
             marca("pii_s")
-            est = dict(intencao=req.intencao.value, sigla=req.sigla, texto=texto, notas_pii=notas, rodada=1, segs=[], perguntas=[],
-                       respostas=[], gatilhos_feitos=[], docs=[], candidatos=[], regra=None, decisao=None, nota=0, dicas=[], contrato=None)
+            est = dict(intencao=req.intencao.value, sigla=req.sigla, wiki=wiki, texto=texto, notas_pii=notas, rodada=1, segs=[],
+                       perguntas=[], respostas=[], gatilhos_feitos=[], docs=[], candidatos=[], regra=None, decisao=None, nota=0, dicas=[],
+                       contrato=None, ponto=self._ponto(req, conn))
             _medicao.tempos = {}
             try:
-                docs, est["candidatos"] = rag(conn, req.intencao, sid, wiki, texto)
+                docs, est["candidatos"] = rag(conn, req.intencao, sid, wiki, consulta_rag(est))
                 est["docs"] = sem_riscados(docs)
             except Exception as e:  # noqa: BLE001  (sem RAG a entrevista continua)
                 conn.rollback()
@@ -464,6 +524,8 @@ class Motor:
             marca("rag_s")
             tempos.update(tempos_rag())
             armazem.criar(app, eid, req, sid, config.MODO_PII, True, est, 0, RETENCAO_DIAS)
+            if est["ponto"]:                                              # 1.5.0: para a Fase 3 medir o efeito do menu
+                armazem.evento(app, eid, 1, "ponto_partida", conteudo={k: est["ponto"][k] for k in ("fonte", "menu_id")})
             est["candidatos"] = self._reordena_candidatos(app, eid, est)
             marca("reordena_candidatos_s")
             ia = self._rodada(app, eid, est, imgs)
@@ -635,14 +697,16 @@ class Motor:
             k = self._monta_contrato(app, eid, row, est, gerar=False)
             cf.verifica_confirmavel(k)
             funcs = cf.funcionalidades_confirmadas(escopo, self._candidatos(est))
+            lidos = cf.documentos_lidos(escopo, documentos(est["docs"]))
             grupos = cf.monta_grupos(k, escopo, funcs)
             armazem.grava_escopo(app, eid, 0, 0, None, k.model_dump(mode="json"))
             armazem.grava_escopo(app, eid, 1, 1, escopo.cd_usuario,
                                  dict(escopo=escopo.model_dump(mode="json"), grupos=[g.model_dump(mode="json") for g in grupos],
-                                      candidatos_confirmados=[dict(id=f.id, nome=f.nome, tipo_ifpug=f.tipo_ifpug) for f in funcs]))
+                                      candidatos_confirmados=[dict(id=f.id, nome=f.nome, tipo_ifpug=f.tipo_ifpug) for f in funcs],
+                                      documentos_lidos=lidos, ponto_partida=est.get("ponto")))
             armazem.evento(app, eid, est["rodada"], "confirmacao",
                            conteudo=dict(grupos=[g.tipo.value for g in grupos], requisitos=len(escopo.requisitos),
-                                         candidatos_confirmados=[f.id for f in funcs]))
+                                         candidatos_confirmados=[f.id for f in funcs], documentos_lidos=lidos))
             inf = cf.inferidos(k, escopo)
             if inf["confirmados"] or inf["removidos"]:
                 armazem.evento(app, eid, est["rodada"], "inferidos", conteudo=inf)
@@ -704,6 +768,41 @@ class Motor:
                                        grupos=[g["tipo"] for g in (r["grupos"] or [])]) for r in armazem.pendentes(app, horas)]
         finally:
             app.close()
+
+    # ---- menus e documentação (contrato 1.5.0)
+    def menus(self, cd_sistema, sigla) -> Menus:
+        """Catálogo de menus do sistema (pela sigla; o cd_sistema do SOS fica só no caminho da rota)."""
+        conn = self.conectar()
+        try:
+            return Menus.model_validate(menus_catalogo.lista(conn, sigla))
+        finally:
+            conn.close()
+
+    def documentacao(self, pagina, eid) -> Documentacao:
+        """Página da wiki para o usuário ler. Só páginas `sistemas:<wiki do sistema da entrevista>:…`; as demais (e entrevista
+        inexistente) → KeyError (404). Versão mais recente, seções na ordem, sem as revogadas."""
+        app = self.conectar_app()
+        conn = self.conectar()
+        try:
+            _, est = self._carrega(app, eid)
+            wiki = est.get("wiki", "")
+            if "wiki" not in est:                               # entrevista anterior à 1.5.0
+                wiki = resolve_sistema(conn, est["sigla"])[1]
+            if not wiki or not pagina.startswith(f"sistemas:{wiki}:"):
+                raise KeyError(pagina)
+            rows = conn.execute(
+                """SELECT titulo_pagina, tipo, secao, texto FROM apf.conhecimento_trecho
+                   WHERE origem_dokuwiki = %(p)s
+                     AND data_versao = (SELECT max(data_versao) FROM apf.conhecimento_trecho WHERE origem_dokuwiki = %(p)s)
+                   ORDER BY ordem""", dict(p=pagina)).fetchall()
+            if not rows:
+                raise KeyError(pagina)
+            secoes = [SecaoDocumentacao(secao=r["secao"] or r["titulo_pagina"], texto=r["texto"] or "")
+                      for r in rows if not riscado(r) and (r["texto"] or "").strip()]
+            return Documentacao(pagina=pagina, titulo=rows[0]["titulo_pagina"], tipo=rows[0]["tipo"], secoes=secoes)
+        finally:
+            app.close()
+            conn.close()
 
     @staticmethod
     def _prompt_contrato(est, segs):

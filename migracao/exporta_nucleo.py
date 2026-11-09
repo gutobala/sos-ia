@@ -13,6 +13,8 @@ Cópia por postgres_fdw dentro do container (SQL puro, sem dado passando pela m�
 Uso (na raiz do sos-ia):  .venv\\Scripts\\python migracao\\exporta_nucleo.py              (simula: plano + contagens da origem)
                           .venv\\Scripts\\python migracao\\exporta_nucleo.py --aplicar    (recria sosia, carrega, verifica, gera dump)
 Saída: dados\\sosia.dump (pg_dump -Fc, carregado pelo docker-compose) e dados\\exporta_nucleo_relatorio.txt
+Catálogo de menus (1.5.0): antes do dump, aplica migracao\\sql\\04_menu_sistema.sql e dados\\menus.sql (gerado por
+migracao\\carrega_menus.py; rode-o antes).
 """
 import argparse
 import os
@@ -219,6 +221,15 @@ CREATE SCHEMA src; IMPORT FOREIGN SCHEMA apf LIMIT TO ({', '.join(t for t, *_ in
     log("\n## Mascaramento no núcleo (só em sosia; a base apf não muda)")
     for t, col, n in mascara(nomes):
         log(f"  {t}.{col}: {n} linhas alteradas")
+    # catálogo de menus (1.5.0): a tabela sempre; os itens de dados\menus.sql, gerado por migracao\carrega_menus.py
+    log("\n## Catálogo de menus (apf.menu_sistema)")
+    psql(DESTINO, arquivo=os.path.join(RAIZ, "migracao", "sql", "04_menu_sistema.sql"))
+    menus_sql = os.path.join(DADOS, "menus.sql")
+    if os.path.exists(menus_sql):
+        psql(DESTINO, arquivo=menus_sql)
+        log(f"  {psql(DESTINO, 'SELECT count(*) FROM apf.menu_sistema;').strip()} itens de dados\\menus.sql")
+    else:
+        log("  sem dados\\menus.sql: tabela vazia (rode migracao\\carrega_menus.py e exporte de novo)")
     psql(DESTINO, "VACUUM ANALYZE;")
     # verificação: contagens e PII
     no, nd = contagens(ORIGEM), contagens(DESTINO)

@@ -83,6 +83,17 @@ def funcionalidades_confirmadas(escopo: EscopoEditado, candidatos):
     return [mostrados[i] for i in mostrados if i in ids]
 
 
+def documentos_lidos(escopo: EscopoEditado, documentos):
+    """Páginas que o usuário leu ou marcou (1.5.0), sem repetir. `documentos`: Documento mostrados nesta entrevista; página que
+    não foi mostrada é erro (vai para a Fase 3 medir se a documentação ajudou)."""
+    mostradas = {d.pagina for d in documentos}
+    lidas = list(dict.fromkeys(escopo.documentos_lidos))
+    fora = [p for p in lidas if p not in mostradas]
+    if fora:
+        raise EscopoInvalido(f"documentos_lidos: {fora} não estão entre os documentos mostrados nesta entrevista")
+    return lidas
+
+
 def inferidos(contrato, escopo: EscopoEditado):
     """Decisão do usuário sobre os requisitos `inferido` do contrato: os que voltaram na tela (por `n_contrato`) foram
     confirmados; os que não voltaram, removidos. Vai no evento `inferidos`."""

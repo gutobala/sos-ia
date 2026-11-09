@@ -1,0 +1,118 @@
+{
+  "$defs": {
+    "FonteMenu": {
+      "description": "De onde veio o catálogo de menus de um sistema (1.5.0).",
+      "enum": [
+        "forms",
+        "benner",
+        "hope",
+        "agendamento",
+        "wiki",
+        "nenhuma"
+      ],
+      "title": "FonteMenu",
+      "type": "string"
+    },
+    "MenuItem": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "identificador estável do item dentro do sistema (é o que vai em PontoPartida.menu_id)",
+          "title": "Id",
+          "type": "string"
+        },
+        "pai": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "id do pai; nulo na raiz (na fonte wiki, sempre nulo)",
+          "title": "Pai"
+        },
+        "nome": {
+          "description": "rótulo como o usuário vê",
+          "title": "Nome",
+          "type": "string"
+        },
+        "folha": {
+          "description": "true = abre uma tela; false = só agrupa outros itens",
+          "title": "Folha",
+          "type": "boolean"
+        },
+        "caminho": {
+          "description": "\"Pai > Filho > Item\", sem a sigla do sistema",
+          "title": "Caminho",
+          "type": "string"
+        },
+        "detalhe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detalhe"
+        },
+        "modulo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "módulo (Benner); nulo nos demais",
+          "title": "Modulo"
+        }
+      },
+      "required": [
+        "id",
+        "nome",
+        "folha",
+        "caminho"
+      ],
+      "title": "MenuItem",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Saída de GET /sistemas/{cd_sistema}/menus. Itens na ordem de leitura (cada um seguido dos filhos).",
+  "properties": {
+    "fonte": {
+      "$ref": "#/$defs/FonteMenu"
+    },
+    "modulos": {
+      "description": "módulos do Benner; vazia nos demais",
+      "items": {
+        "type": "string"
+      },
+      "title": "Modulos",
+      "type": "array"
+    },
+    "menus": {
+      "items": {
+        "$ref": "#/$defs/MenuItem"
+      },
+      "title": "Menus",
+      "type": "array"
+    }
+  },
+  "required": [
+    "fonte"
+  ],
+  "title": "Menus",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/Menus.schema.json",
+  "x-versao-contrato": "1.5.0"
+}

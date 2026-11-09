@@ -2,6 +2,7 @@
   "$defs": {
     "CandidatoFuncionalidade": {
       "additionalProperties": false,
+      "description": "Função do catálogo de PF parecida com o pedido. 1.5.0: a tela do usuário não mostra mais (os nomes são os das contagens,\nnão os da tela); fica no contrato para a Sustentação.",
       "properties": {
         "id": {
           "anyOf": [
@@ -76,6 +77,51 @@
       ],
       "title": "DecisaoRegra",
       "type": "string"
+    },
+    "Documento": {
+      "additionalProperties": false,
+      "description": "Página da wiki que o RAG achou para o pedido (1.5.0); o texto vem de GET /documentacao.",
+      "properties": {
+        "pagina": {
+          "description": "id da página (sistemas:…); é o que vai em GET /documentacao?pagina= e em documentos_lidos",
+          "title": "Pagina",
+          "type": "string"
+        },
+        "titulo": {
+          "title": "Titulo",
+          "type": "string"
+        },
+        "tipo": {
+          "description": "caso_de_uso, user_story ou regras_de_negocio",
+          "title": "Tipo",
+          "type": "string"
+        },
+        "secao": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "seção da página que mais se parece com o pedido",
+          "title": "Secao"
+        },
+        "similaridade": {
+          "title": "Similaridade",
+          "type": "number"
+        }
+      },
+      "required": [
+        "pagina",
+        "titulo",
+        "tipo",
+        "similaridade"
+      ],
+      "title": "Documento",
+      "type": "object"
     },
     "Pergunta": {
       "additionalProperties": false,
@@ -262,7 +308,7 @@
       "type": "string"
     },
     "versao_contrato": {
-      "default": "1.4.1",
+      "default": "1.5.0",
       "title": "Versao Contrato",
       "type": "string"
     },
@@ -296,6 +342,15 @@
         "$ref": "#/$defs/CandidatoFuncionalidade"
       },
       "title": "Candidatos Funcionalidade",
+      "type": "array"
+    },
+    "documentos": {
+      "description": "1.5.0: casos de uso, user stories e regras achados pelo RAG (até 5, uma vez por página, sem os revogados); vazia quando o sistema não tem wiki",
+      "items": {
+        "$ref": "#/$defs/Documento"
+      },
+      "maxItems": 5,
+      "title": "Documentos",
       "type": "array"
     },
     "regra_documentada": {
@@ -360,5 +415,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/EstadoEntrevista.schema.json",
-  "x-versao-contrato": "1.4.1"
+  "x-versao-contrato": "1.5.0"
 }

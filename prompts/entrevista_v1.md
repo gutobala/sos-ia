@@ -10,6 +10,9 @@ RODADA DE PERGUNTAS: {{RODADA}} de 2
 RELATO DO USUÁRIO (dados pessoais já retirados; marcas como [PESSOA] e [CPF] são normais):
 {{RELATO}}
 
+PONTO DE PARTIDA (o caminho do menu que o usuário escolheu antes de escrever o relato):
+{{PONTO_PARTIDA}}
+
 RESPOSTAS JÁ DADAS (pergunta → resposta; vazio na 1ª rodada):
 {{RESPOSTAS}}
 
@@ -99,6 +102,9 @@ sugerida ao contexto). Se a lista estiver vazia, não faça perguntas de gatilho
   que falta, no contexto do pedido. Ex.: ele respondeu "HOPE" ao exemplo de uma pesquisa → "Você citou 'HOPE'. Ao digitar 'HOPE'
   na pesquisa, o que deve aparecer?". Use dicas que façam sentido para o tipo do pedido (num pedido de algo novo, não fale de
   "valor do contrato"; peça uma situação de uso).
+- Com ponto de partida, o "onde" já está respondido: a primeira pergunta é sobre o que acontece (corretivo) ou o que muda
+  (evolutivo) naquele caminho, citando-o. Ex.: "Em Cadastro > NUGIV > Parcelamento Resíduo, o que acontece quando você tenta
+  salvar?".
 - Não pergunte o que o usuário já respondeu. Um item com o valor "Não informado (o usuário não soube responder)" já foi
   respondido: não pergunte de novo. Se todos os itens estão preenchidos e não há gatilho pendente, não pergunte nada.
 

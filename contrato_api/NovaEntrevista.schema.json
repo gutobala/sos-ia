@@ -1,5 +1,18 @@
 {
   "$defs": {
+    "FontePontoPartida": {
+      "enum": [
+        "fgca",
+        "livre",
+        "forms",
+        "benner",
+        "hope",
+        "agendamento",
+        "wiki"
+      ],
+      "title": "FontePontoPartida",
+      "type": "string"
+    },
     "Imagem": {
       "additionalProperties": false,
       "properties": {
@@ -37,6 +50,55 @@
       ],
       "title": "Intencao",
       "type": "string"
+    },
+    "PontoPartida": {
+      "additionalProperties": false,
+      "description": "Por onde o usuário entra no sistema (1.5.0). Entra na busca do RAG junto com o relato e preenche `onde_ocorre`\n(corretivo) ou `funcionalidade` (evolutivo existente), que deixam de ser perguntados; em \"algo novo\" é \"onde ficaria\".",
+      "properties": {
+        "caminho": {
+          "description": "\"Cadastro > NUGIV > Parcelamento Resíduo\" ou o texto livre",
+          "maxLength": 300,
+          "minLength": 2,
+          "title": "Caminho",
+          "type": "string"
+        },
+        "detalhe": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detalhe"
+        },
+        "menu_id": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "MenuItem.id (nulo em fonte livre)",
+          "title": "Menu Id"
+        },
+        "fonte": {
+          "$ref": "#/$defs/FontePontoPartida"
+        }
+      },
+      "required": [
+        "caminho",
+        "fonte"
+      ],
+      "title": "PontoPartida",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -69,6 +131,18 @@
       "maxItems": 5,
       "title": "Imagens",
       "type": "array"
+    },
+    "ponto_partida": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PontoPartida"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "1.5.0: com ele, não ponha mais 'Menu: …' no relato"
     }
   },
   "required": [
@@ -81,5 +155,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/NovaEntrevista.schema.json",
-  "x-versao-contrato": "1.4.1"
+  "x-versao-contrato": "1.5.0"
 }

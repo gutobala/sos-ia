@@ -34,6 +34,20 @@ Só texto anonimizado (SOS e OS de projeto), wiki, histórico inteiro de contage
 mínimo; depois mascara CPF, e-mail, telefone e nomes conhecidos (também na wiki) e varre o resultado.
 Relatório: `dados\exporta_nucleo_relatorio.txt`. Em 05/11/2026: 1,24 GB, dump 335 MB, varredura OK.
 
+## Catálogo de menus (1.5.0)
+Tabela `apf.menu_sistema` (`migracao/sql/04_menu_sistema.sql`), carregada por `migracao/carrega_menus.py`. Esse script sempre
+simula: gera `dados\menus.sql` e o relatório `dados\menus_cobertura.txt`. Só grava com `--aplicar`. Roda no container da API, com
+o projeto montado:
+```
+docker run --rm -v "D:/Projetos/sos-ia:/app" -w /app --network sos-ia_default -e "SOSIA_DSN=host=db port=5432 dbname=sosia user=sosia password=sosia_local" sos-ia-api python -m migracao.carrega_menus --mmb GAI=fontes/gai_menu.mmb --wiki [--aplicar]
+```
+- **FORMS:** a árvore sai do `.mmb`, lido direto do binário (`nucleo/menus/forms.py`), sem Oracle Forms. Com vários sistemas,
+  repita `--mmb SIGLA=arquivo`. A pasta `fontes\` não vai para o git.
+- **Wiki** (reserva para todos): caminhos "Menu: …" dos casos de uso e seções "CAMINHO DE ACESSO" das user stories
+  (`nucleo/menus/wiki.py`); só folhas.
+- **Dump:** o `exporta_nucleo.py --aplicar` aplica a tabela e o `dados\menus.sql` antes do `pg_dump`. Em 08/11/2026: GAI com 187
+  itens (forms) e 39 sistemas pela wiki, num total de 528 itens.
+
 ## Subir só a API em modo mock, sem Docker
 ```
 iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvicorn servico.app:app --port 8010)
@@ -42,7 +56,7 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
 - Cabeçalho obrigatório (menos em `/saude`): `X-SOSIA-Token: mock` (em produção: valor de `SOSIA_TOKEN`).
 - Respostas sempre `application/json; charset=utf-8`; erros sempre no formato `Erro` `{erro, detalhe}`.
 
-## Contrato da API (versão 1.4.1) — `contrato_api/`
+## Contrato da API (versão 1.5.0) — `contrato_api/`
 | Rota | Entrada | Saída |
 |---|---|---|
 | `GET /saude` | — | `Saude` (o SOS decide IA × roteiro fixo por `ok`) |
@@ -55,6 +69,8 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
 | `POST /entrevistas/{id}/confirmacao/chamados` (1.2.0) | `VinculoChamados` `{chamados[{tipo, cd_solicitacao}], cd_pacote}` | `Confirmacao` → CONFIRMADA (idempotente) |
 | `GET /solicitacoes/{cd}/escopo` (1.2.0) | — | `EscopoChamado` (versões 0 = IA, 1 = usuário) |
 | `GET /confirmacoes/pendentes?horas=1` (1.2.0) | — | `EntrevistaPendente[]` (para reconciliar com o Oracle) |
+| `GET /sistemas/{cd}/menus?sigla=` (1.5.0) | — | `Menus` (fonte própria > wiki > `nenhuma`; nunca 404) |
+| `GET /documentacao?pagina=&entrevista=` (1.5.0) | — | `Documentacao` (só páginas da wiki do sistema da entrevista) |
 
 - `intencao`: `PAROU_DE_FUNCIONAR` · `MUDAR_EXISTENTE` · `ALGO_NOVO` (garantia não passa pela IA).
 - `segmentos[].tipo`: `CORRETIVO` · `EVOLUTIVO_EXISTENTE` · `EVOLUTIVO_NOVO`; `requisitos[].tipo`: `CORRETIVO` · `EVOLUTIVO`
@@ -74,6 +90,12 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
   `app.entrevista_chamado_historico`. **Aquecimento** (`nucleo/aquecimento.py`): `pg_prewarm` das tabelas/índices da entrevista
   (só a coluna de vetor em uso) + busca de mentira, na subida e a cada `SOSIA_AQUECER_MIN` (30); `shared_buffers` 1 GB no
   `sosia_db` (`SOSIA_DB_SHARED_BUFFERS`). Evento `tempos` em cada criação. Medição em `dados\aquecimento_medicao.txt`.
+- **1.5.0 (menu e documentação; `PASSAGEM_SOS.md` 4.8):**
+  - `NovaEntrevista.ponto_partida`: o caminho entra na busca (`motor.consulta_rag`) e preenche `onde_ocorre` ou
+    `funcionalidade` no segmento 1 (`roteiros.slot_do_ponto`). O LLM não troca esse valor (`aplica`). Em "algo novo", o caminho
+    vai só para o prompt. Evento `ponto_partida`.
+  - `EstadoEntrevista.documentos` (`motor.documentos`: UC, US e RN, uma vez por página, até 5) e `GET /documentacao`.
+  - `EscopoEditado.documentos_lidos`, validado contra os documentos mostrados e gravado na v1, junto com o ponto de partida.
 - Máximo de 2 rodadas do LLM. **Complemento (1.3.0):** depois delas, se ainda faltar item obrigatório, a entrevista não se
   encerra: `complemento=true` e só as perguntas fixas do que falta (`roteiros.perguntas_complemento`; sem IA, sem gatilho, sem a
   decisão da regra, no máximo 5, ids `c{n}p{i}`), repetidas até completar. Evento `complemento`; `analise_ia` não muda.

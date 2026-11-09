@@ -8,7 +8,10 @@ Serve para a sessão do SOS desenvolver novaAbertura.asp / entrevistaApi.asp ant
     até POST /regra (aceita → EVOLUTIVO_EXISTENTE com mais uma rodada de perguntas; recusa → segue corretivo);
   - no máximo 2 rodadas; depois, se ainda faltar item obrigatório, rodadas de complemento (só o que falta, sem limite);
     quando não falta nada, pronto=true;
-  - confirmação (1.2.0) com as mesmas regras do motor real (confirmacao.py), versões e vínculos em memória.
+  - confirmação (1.2.0) com as mesmas regras do motor real (confirmacao.py), versões e vínculos em memória;
+  - 1.5.0: GET /sistemas/{cd}/menus devolve um menu de exemplo de 2 níveis (fonte "wiki") para qualquer sistema; toda entrevista
+    traz 2 documentos fixos, cujo texto sai em GET /documentacao; com `ponto_partida`, onde_ocorre / funcionalidade já vêm
+    preenchidos e não são perguntados.
 """
 import datetime
 import re
@@ -16,9 +19,9 @@ import uuid
 
 from . import confirmacao as cf, roteiros
 from .modelos import (CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra, DecisaoRegraDocumentada,
-                      EntrevistaPendente, EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista, Integracao, Intencao,
-                      NovaEntrevista, Origem, Pergunta, RegraDocumentada, RequisitoContrato, Respostas, Segmento, TipoRequisito, TipoSegmento,
-                      VersaoEscopo, VinculoChamados)
+                      Documentacao, Documento, EntrevistaPendente, EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista,
+                      Integracao, Intencao, MenuItem, Menus, NovaEntrevista, Origem, Pergunta, RegraDocumentada, RequisitoContrato,
+                      Respostas, SecaoDocumentacao, Segmento, TipoRequisito, TipoSegmento, VersaoEscopo, VinculoChamados)
 
 
 def _agora():
@@ -33,6 +36,19 @@ RX_CALCULO = re.compile(r"c[aá]lcul", re.I)
 SLOT_PRINCIPAL = {TipoSegmento.CORRETIVO: "o_que_aconteceu", TipoSegmento.EVOLUTIVO_EXISTENTE: "o_que_muda",
                   TipoSegmento.EVOLUTIVO_NOVO: "o_que_faz"}
 PERGUNTA_SLOT = roteiros.PERGUNTA_SLOT      # mantido aqui: o motor importa daqui
+MENU_EXEMPLO = [("m1", None, "Cadastro", False, "Cadastro"),
+                ("m11", "m1", "Alienação", True, "Cadastro > Alienação"),
+                ("m12", "m1", "Parcelamento", True, "Cadastro > Parcelamento"),
+                ("m2", None, "Relatório", False, "Relatório"),
+                ("m21", "m2", "Extrato da Alienação", True, "Relatório > Extrato da Alienação")]
+
+
+def _documentos_exemplo(sigla):
+    s = sigla.lower()
+    return [Documento(pagina=f"sistemas:{s}:documentacao_tecnica:caso_de_uso:uc001:inicio", titulo="UC001 - Cadastrar Alienação (exemplo)",
+                      tipo="caso_de_uso", secao="FLUXO PRINCIPAL", similaridade=0.81),
+            Documento(pagina=f"sistemas:{s}:documentacao_tecnica:regras_de_negocio:inicio", titulo="Regras de Negócio (exemplo)",
+                      tipo="regras_de_negocio", secao="RN010", similaridade=0.77)]
 
 
 class MotorMock:
@@ -48,9 +64,11 @@ class MotorMock:
         if RX_MISTO.search(req.relato):
             tipos.append(TipoSegmento.EVOLUTIVO_EXISTENTE if tipos[0] != TipoSegmento.EVOLUTIVO_EXISTENTE
                          else TipoSegmento.EVOLUTIVO_NOVO)
-        segs = []
+        segs, p = [], req.ponto_partida
         for n, t in enumerate(tipos, 1):
             valores = {SLOT_PRINCIPAL[t]: req.relato.strip()[:500]} if n == 1 else {}
+            if n == 1 and p and roteiros.slot_do_ponto(t):
+                valores[roteiros.slot_do_ponto(t)] = roteiros.valor_do_ponto(p.caminho, p.fonte.value, p.detalhe)
             segs.append(Segmento(n=n, tipo=t, resumo=(req.relato.strip()[:120] if n == 1 else "Segunda parte do pedido (mock)"),
                                  slots=roteiros.slots_vazios(t, valores)))
         return segs
@@ -96,7 +114,8 @@ class MotorMock:
         dicas = [f"Falta: {f.rotulo}" for f in roteiros.faltando(st["segs"])][:3]
         req = st["req"]
         return EstadoEntrevista(id=eid, rodada=min(st["rodada"], 3), pronto=pronto, segmentos=st["segs"],
-                                candidatos_funcionalidade=self._candidatos(req), regra_documentada=self._regra(req), decisao_regra=st.get("decisao"),
+                                candidatos_funcionalidade=self._candidatos(req), documentos=_documentos_exemplo(req.sigla),
+                                regra_documentada=self._regra(req), decisao_regra=st.get("decisao"),
                                 perguntas=st["perguntas"], complemento=st["complemento"],
                                 nota=self._nota(st["segs"]), dicas_medidor=dicas, analise_ia=self.analise_ia)
 
@@ -137,7 +156,8 @@ class MotorMock:
     def obter(self, eid) -> EstadoEntrevista:
         st = self.estado[eid]
         return EstadoEntrevista(id=eid, rodada=min(st["rodada"], 3), pronto=not st["perguntas"], segmentos=st["segs"],
-                                candidatos_funcionalidade=self._candidatos(st["req"]), regra_documentada=self._regra(st["req"]), decisao_regra=st.get("decisao"),
+                                candidatos_funcionalidade=self._candidatos(st["req"]), documentos=_documentos_exemplo(st["req"].sigla),
+                                regra_documentada=self._regra(st["req"]), decisao_regra=st.get("decisao"),
                                 perguntas=st["perguntas"], complemento=bool(st.get("complemento") and st["perguntas"]),
                                 nota=self._nota(st["segs"]), dicas_medidor=[], analise_ia=self.analise_ia)
 
@@ -204,12 +224,15 @@ class MotorMock:
             raise cf.ConfirmacaoInvalida("o Escopo do Pedido ainda não foi gerado: chame POST /entrevistas/{id}/contrato antes")
         cf.verifica_confirmavel(k)
         funcs = cf.funcionalidades_confirmadas(escopo, self._candidatos(st["req"]))
+        lidos = cf.documentos_lidos(escopo, _documentos_exemplo(st["req"].sigla))
         grupos = cf.monta_grupos(k, escopo, funcs)
         agora = _agora()
         st["versoes"][0] = dict(origem=0, cd_usuario=None, criado_em=agora, conteudo=k.model_dump(mode="json"))
         st["versoes"][1] = dict(origem=1, cd_usuario=escopo.cd_usuario, criado_em=agora,
                                 conteudo=dict(escopo=escopo.model_dump(mode="json"), grupos=[g.model_dump(mode="json") for g in grupos],
-                                              candidatos_confirmados=[dict(id=f.id, nome=f.nome, tipo_ifpug=f.tipo_ifpug) for f in funcs]))
+                                              candidatos_confirmados=[dict(id=f.id, nome=f.nome, tipo_ifpug=f.tipo_ifpug) for f in funcs],
+                                              documentos_lidos=lidos,
+                                              ponto_partida=st["req"].ponto_partida.model_dump(mode="json") if st["req"].ponto_partida else None))
         st["inferidos"] = cf.inferidos(k, escopo)
         st["situacao"], st["atualizado"] = "PENDENTE", agora
         return EscopoConfirmado(id=eid, situacao="PENDENTE", grupos=grupos, analise_ia=k.analise_ia, nota=k.nota, funcionalidades=funcs,
@@ -240,6 +263,20 @@ class MotorMock:
         vs = [VersaoEscopo(versao=n, origem=v["origem"], cd_usuario=v["cd_usuario"], criado_em=v["criado_em"].isoformat(),
                            conteudo=v["conteudo"]) for n, v in sorted(st["versoes"].items())]
         return EscopoChamado(cd_solicitacao=cd_solicitacao, entrevista_id=eid, tipo=tipo, cd_pacote=st["cd_pacote"], versoes=vs)
+
+    # ---- menus e documentação (1.5.0)
+    def menus(self, cd_sistema, sigla) -> Menus:
+        return Menus(fonte="wiki", modulos=[], menus=[MenuItem(id=i, pai=p, nome=n, folha=f, caminho=c) for i, p, n, f, c in MENU_EXEMPLO])
+
+    def documentacao(self, pagina, eid) -> Documentacao:
+        st = self.estado[eid]
+        doc = next((d for d in _documentos_exemplo(st["req"].sigla) if d.pagina == pagina), None)
+        if doc is None:
+            raise KeyError(pagina)
+        return Documentacao(pagina=doc.pagina, titulo=doc.titulo, tipo=doc.tipo, secoes=[
+            SecaoDocumentacao(secao=doc.secao, texto="Texto de exemplo da documentação (mock). O ator aciona o menu e o sistema "
+                                                     "apresenta a tela."),
+            SecaoDocumentacao(secao="Observações", texto="Segunda seção de exemplo.")])
 
     def pendentes(self, horas) -> list[EntrevistaPendente]:
         limite = _agora() - datetime.timedelta(hours=horas)
