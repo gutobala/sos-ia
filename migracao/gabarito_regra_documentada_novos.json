@@ -1,0 +1,236 @@
+{
+ "descricao": "Gabarito NOVO (confirmação) do laboratório da regra documentada, escrito depois da 1ª rodada e nunca usado para ajustar o prompt. Mesmo formato de gabarito_regra_documentada.json. Foco em quase-regras (falso alarme) + 3 casos com regra para conferir que a sensibilidade não caiu. GAI, PAROU_DE_FUNCIONAR, relatos com acento, sem dado pessoal.",
+ "sigla": "GAI",
+ "casos": [
+  {
+   "id": "N1",
+   "tipo": "Q",
+   "motivo": "contradiz a condição da RN06 (S é valor válido)",
+   "perto": "RN06",
+   "relato": "No cadastro da alienação marquei S no campo de proprietário e mesmo assim o sistema não deixa salvar.",
+   "regra": [],
+   "aceitas_secao": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "aceitas_secao": [],
+     "texto": "Os outros campos estão preenchidos. Ao salvar, a tela não grava."
+    }
+   ]
+  },
+  {
+   "id": "N2",
+   "tipo": "Q",
+   "motivo": "o sistema descumpre a RN114 (deveria avisar segunda via)",
+   "perto": "RN114",
+   "relato": "Gerei de novo o boleto de uma alienação que já tinha boleto e não apareceu nenhum aviso de segunda via; saiu como se fosse o primeiro.",
+   "regra": [],
+   "aceitas_secao": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "aceitas_secao": [],
+     "texto": "O primeiro boleto foi gerado semana passada pela mesma tela."
+    }
+   ]
+  },
+  {
+   "id": "N3",
+   "tipo": "Q",
+   "motivo": "contradiz a condição da RN163 (pode excluir até 1 dia antes da publicação)",
+   "perto": "RN163",
+   "relato": "Faltam 10 dias para a publicação do leilão na internet e o sistema não deixa excluir um item da ordem de serviço.",
+   "regra": [],
+   "aceitas_secao": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "aceitas_secao": [],
+     "texto": "A data de publicação na internet é daqui a 10 dias. Não aparece mensagem, o botão de excluir não responde."
+    }
+   ]
+  },
+  {
+   "id": "N4",
+   "tipo": "Q",
+   "motivo": "o sistema descumpre a RN17 (deveria mostrar a mensagem de dias)",
+   "perto": "RN17",
+   "relato": "Consulto uma alienação com recebimento suspenso e prazo determinado preenchido, e não aparece o aviso de quantos dias faltam para acabar a suspensão.",
+   "regra": [],
+   "aceitas_secao": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "aceitas_secao": [],
+     "texto": "A alienação está na situação 9 e o prazo determinado foi preenchido na alteração de situação."
+    }
+   ]
+  },
+  {
+   "id": "N5",
+   "tipo": "Q",
+   "motivo": "contradiz a condição da RN256 (taxa acessória pode ser cadastrada uma vez)",
+   "perto": "RN256",
+   "relato": "No refinanciamento, lanço o IPTU como taxa acessória pela primeira vez e o sistema diz que a taxa já foi informada.",
+   "regra": [],
+   "aceitas_secao": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "aceitas_secao": [],
+     "texto": "Nunca foi lançada taxa acessória nessa alienação."
+    }
+   ]
+  },
+  {
+   "id": "N6",
+   "tipo": "Q",
+   "motivo": "contradiz todas as condições da RN262/RN266 para data retroativa (em dia na data informada, sem pagamentos nem refinanciamentos posteriores) — conferido pelo usuário em 08/11",
+   "perto": "RN262",
+   "relato": "A migração de índice de uma venda com data retroativa não é aceita pelo sistema, mas na data escolhida a venda estava em dia e depois dela não houve nenhum pagamento nem refinanciamento.",
+   "regra": [],
+   "aceitas_secao": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "aceitas_secao": [],
+     "texto": "A data escolhida é do mês passado; nela a alienação estava em dia, e depois dela não houve pagamento nem refinanciamento."
+    }
+   ]
+  },
+  {
+   "id": "N7",
+   "tipo": "Q",
+   "motivo": "o fluxo que vale é o FA2 Alterar Cadastro de Leiloeiro, que permite a alteração: o sistema descumpre o FA2 (defeito). A RN36 trata de excluir/reativar, não de alterar contato — conferido pelo usuário em 08/11",
+   "perto": "FA2 Alterar Cadastro de Leiloeiro",
+   "relato": "Não consigo alterar o telefone de contato de um leiloeiro que está ativo; a alteração não fica gravada.",
+   "regra": [],
+   "aceitas_secao": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "aceitas_secao": [],
+     "texto": "Mudo o telefone, salvo, e ao abrir de novo está o número antigo."
+    }
+   ]
+  },
+  {
+   "id": "N8",
+   "tipo": "Q",
+   "motivo": "o sistema descumpre a RN119 (deveria alertar no relatório)",
+   "perto": "RN119",
+   "relato": "No relatório, a alienação da modalidade 117 que foi quitada antes do prazo não traz nenhum alerta sobre isso.",
+   "regra": [],
+   "aceitas_secao": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "aceitas_secao": [],
+     "texto": "A quitação antecipada foi registrada no mês passado."
+    }
+   ]
+  },
+  {
+   "id": "N9",
+   "tipo": "Q",
+   "motivo": "o sistema descumpre a RN11: a mensagem de rescisão é um parágrafo da própria carta do Pró-DF (não alerta em tela) e deixou de sair",
+   "perto": "RN11",
+   "relato": "A carta de cobrança da modalidade 50 está saindo sem o parágrafo que avisa que o contrato pode ser rescindido.",
+   "regra": [],
+   "aceitas_secao": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "aceitas_secao": [],
+     "texto": "Antes o parágrafo aparecia depois de 'judicial do contrato'; agora não aparece mais."
+    }
+   ]
+  },
+  {
+   "id": "N10",
+   "tipo": "T",
+   "motivo": "falha técnica na geração da carta de cobrança",
+   "perto": "RN103",
+   "relato": "Ao gerar a carta de cobrança aparece a mensagem 'Erro inesperado, contate o administrador' e nada é gerado.",
+   "regra": [],
+   "aceitas_secao": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "aceitas_secao": [],
+     "texto": "Acontece com qualquer modelo e qualquer situação desde ontem."
+    }
+   ]
+  },
+  {
+   "id": "NP1",
+   "tipo": "P",
+   "relato": "No refinanciamento, tento lançar de novo o ITBI, que eu já tinha lançado antes nessa alienação, e o sistema não aceita.",
+   "regra": [
+    "RN256"
+   ],
+   "aceitas_secao": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [
+      "RN256"
+     ],
+     "aceitas_secao": [],
+     "texto": "O ITBI já está cadastrado como taxa acessória nessa alienação."
+    }
+   ]
+  },
+  {
+   "id": "NP2",
+   "tipo": "P",
+   "relato": "Algumas cartas de cobrança estão saindo com um parágrafo dizendo que o contrato será rescindido sem devolver o que foi pago, e o cliente reclamou.",
+   "regra": [
+    "RN11"
+   ],
+   "aceitas_secao": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [
+      "RN11"
+     ],
+     "aceitas_secao": [],
+     "texto": "A carta é de uma alienação da modalidade 53, do Pró-DF."
+    }
+   ],
+   "nota": "RN11 só vale para modalidades do Pró-DF; em outra modalidade o parágrafo não deveria aparecer (usuário, 08/11)."
+  },
+  {
+   "id": "NP3",
+   "tipo": "P",
+   "relato": "Ao gerar o boleto aparece um aviso dizendo que é segunda via, mas o cliente diz que nunca recebeu o primeiro.",
+   "regra": [
+    "RN114"
+   ],
+   "aceitas_secao": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [
+      "RN114"
+     ],
+     "aceitas_secao": [],
+     "texto": "Um colega gerou um boleto dessa alienação mês passado, mas não foi enviado ao cliente."
+    }
+   ],
+   "nota": "O aviso só é correto quando é de fato segunda via; na situação, já existe boleto anterior gerado (usuário, 08/11)."
+  }
+ ],
+ "conferencia": "Rótulos N1–N10 e NP1–NP3 conferidos pelo usuário em 08/11/2026; N6, N7 e N9 ajustados conforme as observações."
+}

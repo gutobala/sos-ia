@@ -1,0 +1,454 @@
+{
+ "descricao": "Gabarito do laboratório da regra documentada (pedido 1.3.2; docs/laboratorio-regra-documentada.md). Sistema GAI, intenção PAROU_DE_FUNCIONAR. Relatos escritos a partir da wiki do GAI (não há chamados reais com a resposta 'conforme a regra'), no vocabulário do usuário, sem dado pessoal. regra = códigos aceitos (vazio = nenhuma). perto = regra existente mais próxima, para os casos sem regra. situacoes = o que o usuário simulado da variante B sabe (nunca a regra). aceitas_secao = trechos de caso de uso que descrevem a mesma restrição e também valem como acerto. Rótulos revistos após a rodada seca (trechos vizinhos lidos na wiki em 06/11/2026).",
+ "sigla": "GAI",
+ "casos": [
+  {
+   "id": "P1",
+   "tipo": "P",
+   "ambiguo": true,
+   "sos": true,
+   "relato": "Não consigo emitir o boleto bancário da alienação do prestamista 2023/0110. O sistema bloqueia a emissão do boleto e não gera nada.",
+   "regra": [
+    "RN13",
+    "RN239"
+   ],
+   "situacoes": [
+    {
+     "rotulo": "a",
+     "regra": [
+      "RN13"
+     ],
+     "texto": "O prestamista tentou emitir o boleto sozinho pelo Portal da Terracap na internet e me ligou. Esse prestamista tem uma inscrição no SERASA registrada no GAI. A alienação está em dia. Não apareceu mensagem para ele, só não gerou.",
+     "aceitas_secao": []
+    },
+    {
+     "rotulo": "b",
+     "regra": [
+      "RN239"
+     ],
+     "texto": "Eu mesmo tentei emitir pela tela de emissão de boleto do GAI, escolhendo o tipo de baixa quitação normal. Apareceu uma mensagem dizendo que a alienação está bloqueada para emissão de boleto. Não sei de inscrição no SERASA.",
+     "aceitas_secao": [
+      "FE5 Alienação Bloqueada"
+     ]
+    }
+   ],
+   "aceitas_secao": [
+    "FE5 Alienação Bloqueada"
+   ]
+  },
+  {
+   "id": "P1s",
+   "tipo": "P",
+   "ambiguo": true,
+   "sos": true,
+   "sem_acento_de": "P1",
+   "relato": "Nao consigo emitir o boleto bancario da alienacao do prestamista 2023/0110. O sistema bloqueia a emissao do boleto e nao gera nada.",
+   "regra": [
+    "RN13",
+    "RN239"
+   ],
+   "situacoes": [
+    {
+     "rotulo": "a",
+     "regra": [
+      "RN13"
+     ],
+     "texto": "O prestamista tentou emitir o boleto sozinho pelo Portal da Terracap na internet e me ligou. Esse prestamista tem uma inscrição no SERASA registrada no GAI. A alienação está em dia. Não apareceu mensagem para ele, só não gerou.",
+     "aceitas_secao": []
+    },
+    {
+     "rotulo": "b",
+     "regra": [
+      "RN239"
+     ],
+     "texto": "Eu mesmo tentei emitir pela tela de emissão de boleto do GAI, escolhendo o tipo de baixa quitação normal. Apareceu uma mensagem dizendo que a alienação está bloqueada para emissão de boleto. Não sei de inscrição no SERASA.",
+     "aceitas_secao": [
+      "FE5 Alienação Bloqueada"
+     ]
+    }
+   ],
+   "aceitas_secao": [
+    "FE5 Alienação Bloqueada"
+   ]
+  },
+  {
+   "id": "P2",
+   "tipo": "P",
+   "relato": "Fui desfazer o acordo de dívida que fiz para um cliente e a tela não deixa apagar.",
+   "regra": [
+    "RN234"
+   ],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [
+      "RN234"
+     ],
+     "texto": "É o acordo de renegociação de débitos de uma alienação. Depois desse acordo foi feito outro, mais novo, e o cliente já pagou parcelas desse acordo antigo.",
+     "aceitas_secao": [
+      "FE08 Erro ao Excluir Renegociação"
+     ]
+    }
+   ],
+   "aceitas_secao": [
+    "FE08 Erro ao Excluir Renegociação"
+   ]
+  },
+  {
+   "id": "P3",
+   "tipo": "P",
+   "relato": "Lancei uma parcela errada do TerraFácil e quis apagar só ela, mas o sistema avisa que vai apagar todas.",
+   "regra": [
+    "RN194"
+   ],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [
+      "RN194"
+     ],
+     "texto": "Foi na exclusão de pagamento de uma alienação do programa TerraFácil. Eu queria excluir só uma parcela.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": []
+  },
+  {
+   "id": "P4",
+   "tipo": "P",
+   "relato": "Não consigo lançar a nova venda da modalidade 129: preencho tudo e na hora de salvar o sistema recusa.",
+   "regra": [
+    "RN296"
+   ],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [
+      "RN296"
+     ],
+     "texto": "É o cadastro de uma alienação nova da modalidade 129. A escritura ainda não foi lavrada, então não há data de lavratura no GPZ.",
+     "aceitas_secao": [
+      "FE09 Alienação sem Data de Lavratura"
+     ]
+    }
+   ],
+   "aceitas_secao": [
+    "FE09 Alienação sem Data de Lavratura"
+   ]
+  },
+  {
+   "id": "P5",
+   "tipo": "P",
+   "relato": "Tentei trocar o índice de correção de uma venda com data retroativa e o sistema não aceita.",
+   "regra": [
+    "RN262",
+    "RN266"
+   ],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [
+      "RN262"
+     ],
+     "texto": "É a migração de índice de uma alienação de venda. Na data retroativa que eu informei, a alienação estava em atraso. Não houve pagamento nem refinanciamento depois dessa data.",
+     "aceitas_secao": []
+    }
+   ],
+   "ambiguo": true,
+   "nota": "RN266 (migração retroativa barrada se houver pagamento posterior) também explica o relato; aceitas as duas.",
+   "aceitas_secao": []
+  },
+  {
+   "id": "P6",
+   "tipo": "P",
+   "relato": "Um leiloeiro saiu e eu preciso apagar o cadastro dele, mas não existe a opção de apagar, só de desativar.",
+   "regra": [
+    "RN36"
+   ],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [
+      "RN36"
+     ],
+     "texto": "Quero excluir de vez o cadastro do leiloeiro no módulo de leilão. A tela só oferece inativar.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": []
+  },
+  {
+   "id": "P7",
+   "tipo": "P",
+   "relato": "Ao mudar a situação de um imóvel do leilão, tento juntar a ata digitalizada e o sistema recusa o arquivo.",
+   "regra": [
+    "RN45"
+   ],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [
+      "RN45"
+     ],
+     "texto": "O arquivo se chama 'ata reunião março.pdf' e tem 8 MB. É o primeiro anexo dessa alteração de situação.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": []
+  },
+  {
+   "id": "P8",
+   "tipo": "P",
+   "relato": "Uma colega tentou tirar da lista um modelo antigo de carta de cobrança e não conseguiu.",
+   "regra": [
+    "RN106"
+   ],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [
+      "RN106"
+     ],
+     "texto": "A colega é analista da gerência, não é a chefe da GEARI. Ela tentou excluir o modelo de carta de cobrança.",
+     "aceitas_secao": [
+      "FA3 Excluir Modelo de Carta de Cobrança"
+     ]
+    }
+   ],
+   "aceitas_secao": [
+    "FA3 Excluir Modelo de Carta de Cobrança"
+   ]
+  },
+  {
+   "id": "P9",
+   "tipo": "P",
+   "relato": "Na hora de lançar o parcelamento aparece um aviso mandando procurar a gerência e não dá para continuar.",
+   "regra": [
+    "RN149"
+   ],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [
+      "RN149"
+     ],
+     "texto": "O aviso fala que não existe taxa de administração cadastrada para o ano e manda procurar a GEARI. A data informada nos dados do parcelamento é de 2027.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": [],
+   "injetar": "RN149"
+  },
+  {
+   "id": "P10",
+   "tipo": "P",
+   "relato": "Não consigo cadastrar uma alienação da modalidade 131 para um contrato novo; o sistema barra o cadastro.",
+   "regra": [
+    "RN300"
+   ],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [
+      "RN300"
+     ],
+     "texto": "O vencimento da primeira parcela desse contrato é daqui a 90 dias.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": [],
+   "injetar": "RN300"
+  },
+  {
+   "id": "Q1",
+   "tipo": "Q",
+   "motivo": "contradiz a condição da RN234",
+   "perto": "RN234",
+   "relato": "Tento excluir a renegociação que fiz hoje numa alienação; é a única que ela tem e ainda não tem nenhum pagamento, mas não consigo.",
+   "regra": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "texto": "A renegociação é a única da alienação e não tem pagamento. Ao clicar em excluir, nada acontece e não aparece mensagem.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": []
+  },
+  {
+   "id": "Q2",
+   "tipo": "Q",
+   "motivo": "o sistema descumpre a RN275 (não cobrar CST desde 08/2021)",
+   "perto": "RN275",
+   "relato": "O boleto da alienação está saindo com a taxa de cobrança de serviços de terceiros somada ao valor.",
+   "regra": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "texto": "Boletos emitidos este mês, pela tela do GAI, estão com o valor da CST somado.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": []
+  },
+  {
+   "id": "Q3",
+   "tipo": "Q",
+   "motivo": "o sistema descumpre a RN36 (reativação dá número novo)",
+   "perto": "RN36",
+   "relato": "Reativei um leiloeiro que estava inativo e ele voltou com o mesmo número de credenciamento de antes.",
+   "regra": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "texto": "Ele foi reativado ontem no módulo de leilão e manteve o número antigo.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": []
+  },
+  {
+   "id": "Q4",
+   "tipo": "Q",
+   "motivo": "contradiz a condição da RN45 (arquivo dentro das regras)",
+   "perto": "RN45",
+   "relato": "Na alteração de situação do item de leilão, anexo um PDF de 1 MB chamado ata.pdf e o sistema dá erro ao salvar.",
+   "regra": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "texto": "É o único anexo. Aparece uma tela de erro genérica ao salvar.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": []
+  },
+  {
+   "id": "Q5",
+   "tipo": "Q",
+   "motivo": "contradiz a condição da RN296 (data de lavratura existe)",
+   "perto": "RN296",
+   "relato": "O cadastro da venda da modalidade 129 não salva, mesmo com a data de lavratura já registrada no GPZ.",
+   "regra": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "texto": "A data de lavratura está no GPZ desde a semana passada. Ao salvar, a tela volta sem gravar.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": []
+  },
+  {
+   "id": "Q6",
+   "tipo": "Q",
+   "motivo": "única regra sobre alterar a OS após a publicação (RN151) está riscada/revogada; a RN163, ativa, trata só de excluir item da OS, e o relato é trocar o leiloeiro",
+   "perto": "RN151",
+   "relato": "Depois que preenchemos a data de publicação, o sistema não deixa mais trocar o leiloeiro da ordem de serviço do leilão.",
+   "regra": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "texto": "A data de publicação foi preenchida ontem e agora a OS não aceita a troca do leiloeiro responsável.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": []
+  },
+  {
+   "id": "T1",
+   "tipo": "T",
+   "motivo": "falha técnica na tela das regras de boleto",
+   "perto": "RN239",
+   "relato": "A tela de emissão de boleto da alienação fica carregando e não termina; até semana passada funcionava.",
+   "regra": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "texto": "Acontece com qualquer alienação, desde segunda-feira. Não aparece mensagem.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": []
+  },
+  {
+   "id": "T2",
+   "tipo": "T",
+   "motivo": "falha técnica no relatório da RN190",
+   "perto": "RN190",
+   "relato": "O relatório de saldo a receber por modalidade dá erro 500 quando escolho o período de 2024.",
+   "regra": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "texto": "Com 2023 funciona. Com 2024 aparece a página de erro 500.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": []
+  },
+  {
+   "id": "T3",
+   "tipo": "T",
+   "motivo": "falha técnica no cadastro de alienação",
+   "perto": "RN06",
+   "relato": "Depois da atualização de ontem, o botão Gravar do cadastro de alienação não faz nada.",
+   "regra": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "texto": "Clico em Gravar e nada acontece, com qualquer alienação. Antes da atualização funcionava.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": []
+  },
+  {
+   "id": "C1",
+   "tipo": "C",
+   "sos": true,
+   "motivo": "controle negativo do SOS; pegadinha: 'FE4 Não Permitido Alterar Data de Vencimento da Parcela' fala de parcela paga, mas é do vencimento, não do contrato",
+   "perto": "",
+   "relato": "O sistema não deixa alterar o contrato de alienação depois que a primeira parcela foi paga.",
+   "regra": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "texto": "Quero corrigir o endereço no contrato e o sistema não deixa salvar a alteração.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": []
+  },
+  {
+   "id": "C1s",
+   "tipo": "C",
+   "sos": true,
+   "sem_acento_de": "C1",
+   "motivo": "controle negativo do SOS; pegadinha: 'FE4 Não Permitido Alterar Data de Vencimento da Parcela' fala de parcela paga, mas é do vencimento, não do contrato",
+   "perto": "",
+   "relato": "O sistema nao deixa alterar o contrato de alienacao depois que a primeira parcela foi paga.",
+   "regra": [],
+   "situacoes": [
+    {
+     "rotulo": "",
+     "regra": [],
+     "texto": "Quero corrigir o endereço no contrato e o sistema não deixa salvar a alteração.",
+     "aceitas_secao": []
+    }
+   ],
+   "aceitas_secao": []
+  }
+ ],
+ "conferencia": "Rótulos conferidos pelo analista em 06/11/2026: Q1 (RN234 = não ter pagamento; FE08/UC099 = ser a última; o relato satisfaz as duas, então nenhuma barra); Q2 descumpre RN275; Q3 descumpre RN036; Q4 descumpre RN45; Q5 descumpre RN296 e FE09; Q6 regra riscada = excluída (RN151 descontinuada; RN163 e RN167 limitam excluir item e reativar imóvel, não trocar leiloeiro); T1 falha técnica (possível comunicação com o BRB); T2 erro de sistema; T3 falha silenciosa de JavaScript/Ajax; C1/C1s sem regra encontrada (no GAI o 'contrato' é a própria alienação; só o FE4 trata de parcela paga, e é do vencimento)."
+}
