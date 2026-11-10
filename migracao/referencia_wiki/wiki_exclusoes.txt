@@ -1,0 +1,74 @@
+# Namespaces/páginas do dump DokuWiki que NÃO entram no vault (Terrawiki) nem no wiki_sync.
+# Critério (25/10/2026): fora do sistemas/inicio.md e sem nenhuma página alcançável por links a partir dele.
+# 'ns:' (com ':' no fim) = namespace inteiro; sem ':' no fim = só aquela página.
+# O conteúdo movido está em D:\Projetos\Terrawiki_fora_da_wiki (quarentena, reversível).
+
+# --- duplicatas / grafias erradas de sistemas que já existem no inicio
+sistemas:c:                 # = esteira_-_devops (nome cortado)
+sistemas:devops:            # = esteira_-_devops
+sistemas:data:              # = ania (namespace digitado errado)
+sistemas:efd_reinf:         # = efd-reinf (cópia do pt001)
+sistemas:servico_de_apoio_soa:
+sistemas:servicosdeapoio:
+sistemas:sservicos_de_aplicacao_da_microsoft_iss:
+sistemas:grc2:
+sistemas:grcv2:
+sistemas:gpav2:
+sistemas:portal-data:
+sistemas:portalinterno:     # = portal_interno
+sistemas:teste:
+sistemas:terrageo:          # = terrageo_arcgis
+sistemas:arcgis:            # = terrageo_arcgis
+
+# --- (26/10/2026) fora do inicio, só alcançáveis por links internos: templates e grafias erradas
+sistemas:sigla_do_sistema:             # template (exemplo "GAV")
+sistemas:sigla_sistema:                # template
+sistemas:modelos_de_documentos_tecnicos:  # templates
+
+# --- esqueletos de casos de uso sem conteúdo útil
+sistemas:audiencia:
+sistemas:gdh:
+sistemas:gea:
+sistemas:gqo:
+sistemas:gav_ofertas:
+sistemas:servicos_de_apoio:
+sistemas:controleoperacao:
+
+# --- páginas de uma linha, sem conteúdo
+sistemas:consultassgh:
+sistemas:despesasestadio:
+sistemas:eleicao:
+sistemas:execucaoorcamentariafinanceira:
+sistemas:gai_endereco:
+sistemas:gar:
+sistemas:gfa:
+sistemas:gfe:
+sistemas:governanca_de_ti:
+sistemas:gpr:
+sistemas:grf:
+sistemas:gtc:
+sistemas:gvd:
+sistemas:indicalote:
+sistemas:info_sistemas:
+sistemas:minutas:
+sistemas:organograma:
+sistemas:ouvidoria:
+sistemas:pprgecob:
+sistemas:processo:
+sistemas:rotinafluxocaixa:
+sistemas:sefaz:
+sistemas:terracapmanual:
+
+# --- (26/10/2026) cópia da documentação da Esteira DevOps colada no consultaocupacao (erro de preenchimento da wiki)
+sistemas:consultaocupacao:esteira_devops
+
+# --- páginas soltas na raiz de sistemas (sem ':' no fim: não afetam as pastas de nome parecido)
+sistemas:chamados_de_sistemas
+sistemas:efetuar_login_-_sistemas_web
+sistemas:servicos_de_aplicacao_da_microsoft_iss
+sistemas:servicos_de_apoio_soa
+sistemas:servicos_de_apoio_ws_iis_servidor_de_aplicacao_da_microsoft
+sistemas:servicos_do_servidor_de_aplicacao_da_microsoft
+
+# --- fundido no glpv2 (FUSOES): o inicio do glpweb é um stub repetido do inicio do glpv2
+sistemas:glpweb:inicio
