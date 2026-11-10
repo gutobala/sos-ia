@@ -1,8 +1,10 @@
 """Slots obrigatórios por roteiro e validação determinística (a mesma regra vale no serviço e no confirmarAbertura.asp).
 
 Regra de "preenchido": tira do valor as partes sem conteúdo (TRIVIAIS: "ok", "sim", "não sei"...; partes separadas por ; , . ! ?)
-e exige o mínimo de caracteres do roteiro no que sobra. "não" e "nada" NÃO são triviais (são respostas válidas para fora de
-escopo e outros sistemas). Assim "ok; ok" ou "sim" (sem dizer qual sistema) não destravam o contrato.
+e exige o mínimo de caracteres do roteiro no que sobra. Assim "ok; ok" ou "sim" não destravam o contrato.
+
+1.5.3: "o que fica fora do escopo" e "busca ou grava dados de outros sistemas" saíram dos roteiros do usuário. Quem responde é a
+Sustentação; o sistema citado no relato vira uma dúvida para ela (`duvida_integracao`).
 """
 import re
 
@@ -20,16 +22,12 @@ ROTEIROS = {
         ("funcionalidade", "Funcionalidade que será alterada", 8),
         ("o_que_muda", "O que muda", 15),
         ("exemplo_concreto", "Exemplo concreto", 15),
-        ("fora_de_escopo", "O que fica fora do escopo", 3),
-        ("outros_sistemas", "Busca ou grava dados de outros sistemas?", 2),
     ],
     TipoSegmento.EVOLUTIVO_NOVO: [
         ("quem_usa", "Quem vai usar", 5),
         ("informacoes_guardadas", "Que informações vai guardar", 15),
         ("o_que_faz", "O que faz com essas informações", 15),
         ("exemplo_concreto", "Exemplo concreto", 15),
-        ("fora_de_escopo", "O que fica fora do escopo", 3),
-        ("outros_sistemas", "Busca ou grava dados de outros sistemas?", 2),
     ],
 }
 
@@ -43,9 +41,6 @@ PERGUNTA_SLOT = {
     "funcionalidade": ("Qual funcionalidade será alterada?", "Use o nome do menu ou da tela."),
     "o_que_muda": ("O que deve mudar no comportamento atual?", None),
     "exemplo_concreto": ("Dê um exemplo concreto, com valores.", "Ex.: para o contrato X, o valor deveria ser Y e hoje é Z."),
-    "fora_de_escopo": ("O que NÃO faz parte deste pedido?", "Se nada, responda 'nada'."),
-    "outros_sistemas": ("As informações vêm de outro sistema ou precisam ser gravadas em outro sistema?",
-                        "Ex.: Benner, SEI, banco. Se não, responda 'não'."),
     "quem_usa": ("Quem vai usar a nova funcionalidade?", "Área ou perfil de usuário."),
     "informacoes_guardadas": ("Que informações a funcionalidade vai guardar?", "Liste os campos principais."),
     "o_que_faz": ("O que a funcionalidade faz com essas informações?", None),
@@ -56,8 +51,6 @@ PERGUNTA_SLOT_TIPO = {
     (TipoSegmento.EVOLUTIVO_NOVO, "exemplo_concreto"): (
         "Descreva uma situação de uso: o que a pessoa faz e o que o sistema mostra.",
         "Ex.: ao digitar a sigla HOPE na pesquisa, aparece o link do sistema."),
-    (TipoSegmento.EVOLUTIVO_NOVO, "fora_de_escopo"): (
-        "O que NÃO precisa fazer parte desta primeira versão?", "Se nada, responda 'nada'."),
 }
 MAX_PERGUNTAS_COMPLEMENTO = 5
 MAX_CITACAO = 80
@@ -65,7 +58,7 @@ MAX_CITACAO = 80
 # "Não sei" (1.4.0): estes itens aceitam a resposta e não bloqueiam a abertura; o valor vira NAO_INFORMADO, o item sai de
 # `faltando`, entra nas dúvidas do contrato e baixa a nota. Os demais (onde ocorre, o que aconteceu, funcionalidade, o que muda,
 # quem usa, informações guardadas, o que faz) continuam bloqueando: sem eles não se sabe o que fazer.
-ACEITA_NAO_SEI = {"desde_quando_quem", "como_reproduzir", "exemplo_concreto", "fora_de_escopo", "outros_sistemas"}
+ACEITA_NAO_SEI = {"desde_quando_quem", "como_reproduzir", "exemplo_concreto"}
 NAO_INFORMADO = "Não informado (o usuário não soube responder)"
 OPCAO_NAO_SEI = "Não sei informar"
 _FRASES_NAO_SEI = {"não sei", "nao sei", "não sei informar", "nao sei informar", "não sei dizer", "nao sei dizer", "sei lá",
@@ -104,10 +97,14 @@ TRIVIAIS = {"ok", "okay", "sim", "s", "certo", "correto", "isso", "isso mesmo", 
             "sei lá", "sei la", "talvez", "?", "-", "x", "a", "teste"}
 
 
+RX_MARCA_PONTO = re.compile(r"^\[[^\]]{1,120}\]\s*")
+
+
 def conteudo(valor):
-    """O valor sem as partes triviais (minúsculas, sem espaços duplicados)."""
-    partes = [p.strip() for p in re.split(r"[;,.!?\n]+", (valor or "").lower())]
-    return " ".join(p for p in partes if p and p not in TRIVIAIS)
+    """O valor sem as partes triviais (minúsculas, sem espaços duplicados). A marca do ponto de partida no começo de uma parte
+    ("[Cadastro > Parcelamento] …", 1.5.1) não conta, e "não sei informar" (a opção do botão) é tão trivial quanto "não sei"."""
+    partes = [RX_MARCA_PONTO.sub("", p.strip()) for p in re.split(r"[;,.!?\n]+", (valor or "").lower())]
+    return " ".join(p for p in partes if p and p not in TRIVIAIS and not e_nao_sei(p))
 
 
 def preenchido(tipo, codigo, valor):
@@ -131,9 +128,11 @@ def slots_vazios(tipo, valores=None):
 
 
 def revalida(seg: Segmento) -> Segmento:
-    """Recalcula 'preenchido' de cada slot pela regra determinística (não confia no LLM)."""
+    """Recalcula 'preenchido' de cada slot pela regra determinística (não confia no LLM). Item que saiu do roteiro (1.5.3: fora
+    de escopo e outros sistemas, numa entrevista começada antes) sai do segmento e não bloqueia mais."""
+    codigos = {c for c, _, _ in ROTEIROS[seg.tipo]}
     slots = [s.model_copy(update={"preenchido": preenchido(seg.tipo, s.codigo, s.valor)})
-             for s in seg.slots]
+             for s in seg.slots if s.codigo in codigos]
     return seg.model_copy(update={"slots": slots})
 
 
@@ -151,6 +150,23 @@ def nao_informados(segmentos):
 def duvidas_nao_informado(segmentos):
     """Dúvidas determinísticas do contrato para os itens "Não sei"."""
     return [f"Não informado: {f.rotulo} (segmento {f.segmento})" for f in nao_informados(segmentos)]
+
+
+MAX_TERMOS_INTEGRACAO = 5
+
+
+def duvida_integracao(termos):
+    """1.5.3: o usuário não é mais perguntado sobre outros sistemas; o que ele citou vira uma dúvida para a Sustentação."""
+    por_chave = {}
+    for t in termos:
+        t = " ".join((t or "").split())
+        if t:
+            por_chave.setdefault(t.lower(), t)                # "Benner" e "benner": um só, como apareceu primeiro
+    vistos = list(por_chave.values())
+    if not vistos:
+        return None
+    return (f"Para a Sustentação: o pedido cita outro sistema ({', '.join(vistos[:MAX_TERMOS_INTEGRACAO])}). Confirmar se as "
+            "informações são só consultadas nele ou também gravadas ou enviadas.")
 
 
 def resposta_no_slot(codigo, atual, texto):
@@ -235,6 +251,46 @@ def valor_do_ponto(caminho, fonte, detalhe=None):
     """Texto do item: "Menu: Cadastro > NUGIV > Parcelamento Resíduo"; em fonte livre, como o usuário escreveu."""
     v = caminho.strip() if fonte == "livre" else f"Menu: {caminho.strip()}"
     return v + (f" ({detalhe.strip()})" if detalhe and detalhe.strip() else "")
+
+
+SEP_PONTOS = "; "
+
+
+def valor_dos_pontos(valores):
+    """1.5.1: com vários pontos, o item recebe os caminhos unidos por "; " (o texto do chamado mostra um por linha)."""
+    return SEP_PONTOS.join(v for v in valores if v)
+
+
+# 1.5.1: o que muda é perguntado por ponto (evolutivo existente), com o tipo de mudança como opção.
+SLOT_POR_PONTO = {TipoSegmento.EVOLUTIVO_EXISTENTE: "o_que_muda"}
+MAX_OPCOES_PONTO = 6
+# Sem caso de uso ligado ao menu: tipos de mudança que mais aparecem nas contagens (consultar, gerar, emitir e visualizar somam
+# ~44% das funções contadas). Com página ligada (próxima etapa), os títulos dos fluxos do caso de uso entram no lugar.
+OPCOES_GENERICAS = ["Incluir ou cadastrar", "Alterar", "Excluir", "Consultar ou visualizar", "Gerar relatório ou documento",
+                    "Gerar arquivo ou integração"]
+
+
+def slot_por_ponto(tipo):
+    return SLOT_POR_PONTO.get(TipoSegmento(tipo))
+
+
+def opcoes_do_ponto(fluxos=None):
+    """Opções da pergunta "o que muda" num ponto: os títulos dos fluxos do caso de uso ligado (até 6) ou as genéricas, e o
+    "Não sei informar". O item continua bloqueando: "Não sei" e uma opção sozinha (curta) não o preenchem."""
+    base = [f for f in dict.fromkeys(" ".join(str(x).split()) for x in (fluxos or [])) if f][:MAX_OPCOES_PONTO] or OPCOES_GENERICAS
+    return base + [OPCAO_NAO_SEI]
+
+
+def marca_ponto(caminho):
+    """Prefixo da resposta dada a um ponto, para o item guardar de qual tela é: "[Cadastro > Parcelamento] Alterar o desconto"."""
+    c = " ".join(caminho.replace("[", "(").replace("]", ")").split())
+    return f"[{c[:117] + '…' if len(c) > 118 else c}] "
+
+
+def pergunta_do_ponto(caminho):
+    """(texto, dica) da pergunta "o que muda" de um ponto de partida."""
+    return (f"Em {caminho}, o que deve mudar?",
+            "Escolha o tipo de mudança e descreva o que deve passar a acontecer nessa tela ou nos passos seguintes.")
 
 
 SLOT_DECISAO_REGRA = SlotFaltando(segmento=1, slot="decisao_regra", rotulo="Confirmar se o comportamento segue a regra documentada")

@@ -6,6 +6,8 @@
   2. O SOS grava os chamados no Oracle (e o TS_PACOTE quando são 2).
   3. POST /confirmacao/chamados: o SOS informa os CD_SOLICITACAO. Idempotente; a entrevista fica CONFIRMADA.
 """
+import re
+
 from .modelos import (DecisaoRegra, EscopoEditado, GrupoChamado, Natureza, Origem, RequisitoEscopo,
                       TipoRequisito, TipoSegmento, VinculoChamados)
 
@@ -45,9 +47,10 @@ def verifica_confirmavel(contrato):
         raise ConfirmacaoInvalida(f"o Escopo do Pedido ainda não pode ser confirmado. Falta: {itens}")
 
 
-def monta_grupos(contrato, escopo: EscopoEditado, funcionalidades=()):
+def monta_grupos(contrato, escopo: EscopoEditado, funcionalidades=(), n_pontos=0):
     """Grupos (chamados) do escopo editado. O tipo vem do segmento; segmento inexistente é erro. A origem de um requisito que
-    veio do contrato (`n_contrato`) é a do contrato, não a da tela. `funcionalidades`: as confirmadas (funcionalidades_confirmadas)."""
+    veio do contrato (`n_contrato`) é a do contrato, não a da tela. `funcionalidades`: as confirmadas (funcionalidades_confirmadas).
+    `n_pontos`: quantos pontos de partida a entrevista teve (com 2+, os caminhos saem um por linha no texto)."""
     segs = {s.n: s for s in contrato.segmentos}
     origem_contrato = {r.n: r.origem for r in contrato.requisitos}
     reqs = []
@@ -68,7 +71,7 @@ def monta_grupos(contrato, escopo: EscopoEditado, funcionalidades=()):
         outros = [r for r in reqs if r.tipo != t]
         segs_grupo = [s for s in contrato.segmentos if tipo_requisito(s.tipo) == t]
         grupos.append(GrupoChamado(tipo=t, titulo=titulo(escopo.titulo, t, len(tipos)), requisitos=meus,
-                                   texto=texto(t, escopo, meus, outros, regra, segs_grupo, funcionalidades)))
+                                   texto=texto(t, escopo, meus, outros, regra, segs_grupo, funcionalidades, n_pontos)))
     return grupos
 
 
@@ -108,9 +111,19 @@ NOME_PARTE = {TipoSegmento.CORRETIVO: "Correção", TipoSegmento.EVOLUTIVO_EXIST
               TipoSegmento.EVOLUTIVO_NOVO: "Funcionalidade nova"}
 
 
-def informacoes(segmentos):
+ROTULO_VARIOS_PONTOS = {"funcionalidade": "Funcionalidades que serão alteradas"}
+RX_PARTES_PONTO = {"onde_ocorre": re.compile(r";\s+"), "funcionalidade": re.compile(r";\s+"),
+                   "o_que_muda": re.compile(r";\s+(?=\[)")}       # resposta por ponto começa com a marca "[caminho]"
+
+
+def _corta(v):
+    return v if len(v) <= MAX_VALOR_INFO else v[:MAX_VALOR_INFO - 1].rstrip() + "…"
+
+
+def informacoes(segmentos, n_pontos=0):
     """Linhas da seção INFORMAÇÕES DO PEDIDO: os itens da entrevista ("Rótulo: valor", na ordem do roteiro), sem os vazios e sem
-    o fora de escopo; um subtítulo por segmento quando o grupo tem mais de um. Lista vazia se nenhum item tem valor."""
+    o fora de escopo; um subtítulo por segmento quando o grupo tem mais de um. Lista vazia se nenhum item tem valor.
+    1.5.1: com 2+ pontos de partida, onde ocorre / funcionalidades e o que muda (por ponto) saem um por linha."""
     from .roteiros import ROTEIROS
     blocos = []
     for s in segmentos:
@@ -120,9 +133,12 @@ def informacoes(segmentos):
         for codigo, rotulo, _ in ROTEIROS[TipoSegmento(s.tipo)]:
             v = valores.get(codigo)
             if v and codigo not in SLOTS_FORA_DA_INFO:
-                if len(v) > MAX_VALOR_INFO:
-                    v = v[:MAX_VALOR_INFO - 1].rstrip() + "…"
-                linhas.append(f"{rotulos.get(codigo, rotulo)}: {v}")
+                partes = RX_PARTES_PONTO[codigo].split(v) if n_pontos > 1 and codigo in RX_PARTES_PONTO else [v]
+                if len(partes) > 1:
+                    linhas.append(f"{ROTULO_VARIOS_PONTOS.get(codigo) or rotulos.get(codigo, rotulo)}:")
+                    linhas += [f"- {_corta(p.strip())}" for p in partes if p.strip()]
+                else:
+                    linhas.append(f"{rotulos.get(codigo, rotulo)}: {_corta(v)}")
         if linhas:
             blocos.append((s, linhas))
     out = []
@@ -157,12 +173,12 @@ def frase_outro_chamado(nome_tipo, numeros):
 MARCA_INFERIDO = " (sugerido pela análise e confirmado pelo usuário)"
 
 
-def texto(tipo, escopo, reqs, outros, regra=None, segmentos=(), funcionalidades=()):
+def texto(tipo, escopo, reqs, outros, regra=None, segmentos=(), funcionalidades=(), n_pontos=0):
     """Texto corrido para o DS_SOLICITACAO. O que mais importa vem primeiro: o SOS corta em ~3900 bytes.
     `segmentos`: os do grupo, para a seção INFORMAÇÕES DO PEDIDO (respostas da entrevista). `funcionalidades`: as que o usuário
     marcou entre os candidatos (vão nos dois chamados: os candidatos não são por segmento)."""
     L = ["OBJETIVO", escopo.objetivo.strip(), ""]
-    info = informacoes(list(segmentos))
+    info = informacoes(list(segmentos), n_pontos)
     if info:
         L += ["INFORMAÇÕES DO PEDIDO"] + info + [""]
     if funcionalidades:

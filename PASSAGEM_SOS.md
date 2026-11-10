@@ -1,9 +1,68 @@
-# sos-ia → sessão do SOS: o que mudou e o que o SOS precisa fazer (08/11/2026)
+# sos-ia → sessão do SOS: o que mudou e o que o SOS precisa fazer (10/11/2026)
 
 O serviço sos-ia (núcleo da abertura de chamados com IA) está pronto para a integração. O motor real da entrevista funciona de
-ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.5.0** (aditivo: nenhum campo ou
+ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.5.4** (aditivo: nenhum campo ou
 rota existente mudou de significado, e os campos novos de entrada são opcionais). Os JSON Schemas de cada endpoint ficam em
 `contrato_api/`, com o `openapi.json`.
+
+**Novo na 1.5.4: documentação pronta para mostrar (`GET /documentacao`).**
+- Cada seção ganha **`html`**: o texto da wiki já formatado. As tabelas `| a | b |` (2 de cada 3 seções) viram tabela. Também
+  são formatados:
+  - listas, inclusive as numeradas;
+  - texto riscado (regra revogada);
+  - passos ("P1.") e rótulos ("BREVE DESCRIÇÃO:") em negrito.
+- As referências soltas, uma por linha (RN01, Tela02, FE01), vão para o fim do passo, num `<span class="sosia-refs">`. Links
+  viram só o texto, e as sobras da conversão ("---", "Voltar") somem. `texto` continua como era.
+- **É seguro inserir direto na página** (`Response.Write` do `html`, sem escapar de novo). O sos-ia escapa todo o texto da wiki
+  (um `<ano de referência>` aparece como texto) e só gera as tags p, br, table, thead, tbody, tr, th, td, ul, ol, li, del,
+  strong, span e div.
+- CSS sugerido (ajuste ao visual do SOS):
+  ```css
+  .sosia-tabela{overflow-x:auto;margin:8px 0}
+  .sosia-tabela table{border-collapse:collapse;font-size:13px}
+  .sosia-tabela th,.sosia-tabela td{border:1px solid #ccc;padding:4px 6px;vertical-align:top;text-align:left}
+  .sosia-tabela th{background:#eef2f7}
+  .sosia-refs{color:#666;font-size:12px;background:#f1f1f1;border-radius:3px;padding:0 4px}
+  .sosia-lista{margin:4px 0 8px 18px;padding:0}
+  .sosia-nivel1{margin-left:18px} .sosia-nivel2{margin-left:36px} .sosia-nivel3{margin-left:54px}
+  del{color:#999}
+  ```
+- O mock devolve um exemplo no formato real (passos, referências, riscado e tabela), para estilizar a tela.
+
+**Mudança 1.5.3 (pedido do usuário, 10/11): "fora do pedido" e "outros sistemas" saem da tela do usuário; a Sustentação responde.**
+- **Entrevista:** os itens "O que fica fora do escopo" (`fora_de_escopo`) e "Busca ou grava dados de outros sistemas?"
+  (`outros_sistemas`) saíram dos roteiros evolutivos. Eles não vêm mais em `segmentos[].slots`, `perguntas`, `faltando` nem no texto
+  do chamado. A pergunta de gatilho sobre outro sistema ("Você citou outro sistema…") também não é mais feita, em nenhum roteiro.
+  Entrevista já começada perde os dois itens na próxima chamada e deixa de ficar presa neles.
+- **Escopo do Pedido:** `Contrato.fora_escopo` e `Contrato.integracoes` vêm sempre vazios (os campos continuam no esquema).
+  O sistema que o usuário citou no relato vira uma dúvida, para a Sustentação ver no chamado:
+  `"Para a Sustentação: o pedido cita outro sistema (Benner). Confirmar se as informações são só consultadas nele ou também gravadas ou enviadas."`
+- **O que o SOS faz:**
+  1. Tirar da tela de confirmação os campos "O que não faz parte deste pedido" e "Isso depende de outro sistema".
+  2. No `POST /confirmacao`, mandar `fora_escopo: []` e `integracoes: []`, ou não mandar os dois (o padrão é lista vazia).
+  3. Se o `confirmarAbertura.asp` tem cópia dos itens obrigatórios por roteiro, tirar os dois de lá também. Senão, o SOS
+     bloqueia o que o sos-ia já libera.
+- **Correção junto (teste do GFV):** "chefe do NUVIS" virava "chefe do [PESSOA]" nas respostas. A anonimização tomava a sigla
+  da unidade, depois de "chefe do", por um nome. Agora uma palavra só em maiúsculas depois de "do/da/de" é tratada como sigla.
+  Nome com sobrenome ("chefe do NUVIS, JOÃO SILVA") continua mascarado. Entrevistas já gravadas não mudam, porque a resposta
+  original não é guardada.
+
+**Correção 1.5.2 (teste do SOS de 10/11; o SOS não precisa mudar nada):**
+- **Telas juntadas:** a pergunta não junta mais os caminhos de telas diferentes como se fossem uma só. Eles saem separados por
+  "; " ("Em Venda Direta; Edital Venda por Licitação > Cadastrar Controle Edital; Tela de impressao do controle, …").
+- **Página geral de regras de negócio** ("gai - regras de negocio", de 111 a 368 seções):
+  - na lista, o título passa a ser a regra que casou ("Regras de negócio: RN99. Cálculo para 1°, 2° e 3° Edital"), e ela vem
+    depois dos casos de uso e user stories da mesma tela;
+  - no `GET /documentacao`, vem só essa regra, com a regra-mãe e as sub-regras, até 10 seções;
+  - `Documentacao` ganhou `parcial` (true quando veio só parte) e `secoes_total`. A tela pode mostrar "2 de 111 seções".
+- As outras páginas continuam vindo inteiras.
+
+**Novo na 1.5.1 (seção 4.9; detalhes e JSON em `docs/sosia-1.5.1-pontos-de-partida.md`):**
+- `pontos_partida` na criação: até 5 telas, com uma busca por ponto. O `ponto_partida` antigo continua valendo como lista de 1.
+  Os dois juntos dão 422;
+- `ponto` em `documentos`, `perguntas` e `segmentos`, para a tela agrupar por ponto;
+- "o que muda" perguntado por ponto, com opções do tipo de mudança: `Pergunta.opcoes` passa a ter **até 7** itens;
+- texto do chamado com um caminho por linha.
 
 **Novo na 1.5.0 (seção 4.8; pedido `docs/sosia-1.5.0-menu-e-documentacao.md`):**
 - `GET /sistemas/{cd}/menus?sigla=`: menu dos sistemas que não são PHP (o GAI vem do `.mmb`, com a árvore inteira, e mais 39
@@ -213,7 +272,7 @@ Nada muda nas rotas nem no proxy. Os campos novos de entrada são opcionais: sem
 | Corretivo: como reproduzir, desde quando/quem | sim |
 | Evolutivo existente: funcionalidade, o que muda | **não** |
 | Evolutivo novo: quem usa, o que guarda, o que faz | **não** |
-| Exemplo, fora do escopo, outros sistemas (evolutivos) | sim |
+| Exemplo (evolutivos) | sim |
 
 - Resposta "Não sei" (ou "não sei informar", "sei lá", "não lembro") num item que aceita: o item fica com o valor
   `"Não informado (o usuário não soube responder)"`, conta como respondido, não é perguntado de novo e vira uma dúvida no Escopo do
@@ -315,6 +374,16 @@ Sigla desconhecida também dá 200 com `nenhuma`. Os PHP continuam pelo FGCA, no
 
 **Funcionalidades do catálogo.** `candidatos_funcionalidade` e `candidatos_confirmados` continuam no contrato (para a Sustentação), mas a tela do usuário não precisa mais mostrar nem mandar.
 
+### 4.9 Vários pontos de partida (novo na 1.5.1) — `novaAbertura.asp`
+O contrato completo, com os JSON de exemplo, está em `docs/sosia-1.5.1-pontos-de-partida.md`. Em resumo:
+- **Escolha de telas:** o passo "Onde no sistema" deixa o usuário escolher até 5 telas. Elas vão em `pontos_partida`, na ordem em
+  que ele escolheu. Com uma só, pode continuar mandando `ponto_partida`.
+- **Documentos:** `documentos[].ponto` diz de qual tela veio cada página (1 = a primeira). Vêm até 5 por tela; mostre agrupados.
+- **Perguntas:** `perguntas[].ponto` traz uma pergunta de "o que muda" por tela, com até 7 opções. Uma opção sozinha não basta: o
+  item pede detalhe na rodada seguinte.
+- **Segmentos:** `segmentos[].ponto` vem preenchido quando a IA separa uma mudança por tela.
+- **Texto do chamado:** "Funcionalidades que serão alteradas" (ou "Onde ocorre") com uma tela por linha.
+
 ## 5. Regras do fluxo (determinísticas, não dependem do LLM)
 - No máximo **2 rodadas** de perguntas do LLM e **5 perguntas** por rodada. `pronto=true` → chamar `/contrato`.
 - Depois das 2 rodadas, se ainda faltar item obrigatório: rodadas de complemento até completar (4.6). `pronto=true` só quando não
@@ -327,10 +396,10 @@ Sigla desconhecida também dá 200 com `nenhuma`. Os PHP continuam pelo FGCA, no
 | Roteiro | Slots obrigatórios |
 |---|---|
 | Corretivo | onde ocorre, o que aconteceu, como reproduzir, desde quando/quem |
-| Evolutivo de algo existente | funcionalidade, o que muda, exemplo, fora de escopo, outros sistemas |
-| Evolutivo novo | quem usa, o que guarda, o que faz, exemplo, fora de escopo, outros sistemas |
+| Evolutivo de algo existente | funcionalidade, o que muda, exemplo |
+| Evolutivo novo | quem usa, o que guarda, o que faz, exemplo |
 
-- Pergunta com `slot="gatilho"` é sobre uma complexidade oculta detectada no texto: integração (Benner, SEI, banco), arquivo, rotina, layout legal, "conforme anexo" e similares.
+- Pergunta com `slot="gatilho"` é sobre uma complexidade oculta detectada no texto: arquivo, rotina, layout legal, "conforme anexo" e similares. Outro sistema citado (Benner, SEI, banco) não é perguntado desde a 1.5.3: vira dúvida para a Sustentação.
 
 ## 6. Mock (para as telas)
 O mock reage a palavras do relato:
@@ -345,6 +414,8 @@ O mock reage a palavras do relato:
 - 1.5.0: `/sistemas/{cd}/menus` devolve um menu de exemplo de 2 níveis (`fonte: "wiki"`) para qualquer sistema; toda entrevista
   traz 2 `documentos` fixos, cujo texto sai no `/documentacao`; com `ponto_partida`, `onde_ocorre` / `funcionalidade` já vêm
   preenchidos e não são perguntados.
+- 1.5.1: `pontos_partida` como no real (caminhos unidos por "; ", uma pergunta de "o que muda" por ponto com as 7 opções, documentos
+  com `ponto`).
 
 No mock, `analise_ia` é sempre `false`. O estado do mock some quando o container reinicia.
 

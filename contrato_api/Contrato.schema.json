@@ -150,6 +150,20 @@
           },
           "title": "Slots",
           "type": "array"
+        },
+        "ponto": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1.5.1: número do ponto de partida (1 = o primeiro de pontos_partida) a que o segmento se refere; nulo com 0 ou 1 ponto, ou quando o segmento vale para todos",
+          "title": "Ponto"
         }
       },
       "required": [
@@ -254,7 +268,7 @@
       "type": "string"
     },
     "versao_contrato": {
-      "default": "1.5.0",
+      "default": "1.5.4",
       "title": "Versao Contrato",
       "type": "string"
     },
@@ -367,5 +381,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/Contrato.schema.json",
-  "x-versao-contrato": "1.5.0"
+  "x-versao-contrato": "1.5.4"
 }

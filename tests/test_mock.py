@@ -98,6 +98,8 @@ def test_slot_raso_bloqueia_contrato():
 
 def test_gatilho_e_regra_documentada():
     e = nova("O sistema não permite gerar o boleto e o Benner não recebe o pagamento.")
+    assert not any(p["slot"] == "gatilho" for p in e["perguntas"])          # 1.5.3: outro sistema não se pergunta
+    e = nova("O sistema não permite gerar o arquivo do boleto.")
     assert any(p["slot"] == "gatilho" for p in e["perguntas"])
     assert e["regra_documentada"] is not None
 
@@ -191,9 +193,21 @@ def test_criterio_fixo_e_informacoes_do_pedido_no_texto():
 
     e = nova("Quero mudar o cálculo do desconto da venda direta.", intencao="MUDAR_EXISTENTE")
     e = responde(e, {"funcionalidade": "Venda direta, cálculo do desconto", "exemplo_concreto": "Contrato 9: desconto de 10% e não 5%",
-                     "fora_de_escopo": "nada", "outros_sistemas": "não", "o_que_muda": "desconto passa a ser de 10%"})
+                     "o_que_muda": "desconto passa a ser de 10%"})
     k = valida("Contrato", c.post(f"/entrevistas/{e['id']}/contrato", headers=H).json())
     assert k["requisitos"][0]["criterio_aceite"] == "Conferir com o exemplo: Contrato 9: desconto de 10% e não 5%"
+
+
+def test_fora_de_escopo_e_outros_sistemas_ficam_para_a_sustentacao_no_mock():
+    """1.5.3: sem as duas perguntas; o sistema citado vira dúvida; fora_escopo e integracoes vazios."""
+    e = nova("Quero mudar o cálculo do desconto que vem do Benner.", intencao="MUDAR_EXISTENTE")
+    slots = {p["slot"] for p in e["perguntas"]} | {x["codigo"] for s in e["segmentos"] for x in s["slots"]}
+    assert not {"fora_de_escopo", "outros_sistemas", "gatilho"} & slots
+    e = responde(e, {"funcionalidade": "Venda direta, cálculo do desconto", "exemplo_concreto": "Contrato 9: desconto de 10% e não 5%",
+                     "o_que_muda": "desconto passa a ser de 10%"})
+    k = valida("Contrato", c.post(f"/entrevistas/{e['id']}/contrato", headers=H).json())
+    assert k["pode_confirmar"] and k["fora_escopo"] == [] and k["integracoes"] == []
+    assert any(d.startswith("Para a Sustentação") and "Benner" in d for d in k["duvidas"])
 
 
 # ---------------------------------------------------------------- abertura guiada (1.4.0)
@@ -220,7 +234,7 @@ def test_inferido_e_candidatos_confirmados_no_mock():
     e = nova("Quero mudar o cálculo do desconto da venda direta.", intencao="MUDAR_EXISTENTE")
     assert [c["id"] for c in e["candidatos_funcionalidade"]] == [9001, 9002]
     e = responde(e, {"funcionalidade": "Venda direta, cálculo do desconto", "exemplo_concreto": "Não sei informar",
-                     "fora_de_escopo": "nada", "outros_sistemas": "não", "o_que_muda": "desconto passa a ser de 10%"})
+                     "o_que_muda": "desconto passa a ser de 10%"})
     k = valida("Contrato", c.post(f"/entrevistas/{e['id']}/contrato", headers=H).json())
     inf = [r for r in k["requisitos"] if r["origem"] == "inferido"]
     assert len(inf) == 1 and k["pode_confirmar"]
@@ -257,12 +271,32 @@ def test_ponto_de_partida_e_documentos_no_mock():
     pag = e["documentos"][0]["pagina"]
     d = valida("Documentacao", c.get("/documentacao", headers=H, params=dict(pagina=pag, entrevista=e["id"])).json())
     assert d["pagina"] == pag and d["secoes"]
+    h = "".join(s["html"] for s in d["secoes"])                                  # 1.5.4: pronto para mostrar
+    assert "<strong>P1.</strong>" in h and "<th>Nome</th>" in h and "&lt;obrigatório&gt;" in h and "Voltar" not in h
     r = c.get("/documentacao", headers=H, params=dict(pagina="sistemas:outro:x", entrevista=e["id"]))
     assert r.status_code == 404 and valida("Erro", r.json())
     assert c.get("/documentacao", headers=H, params=dict(pagina=pag, entrevista="nao-existe")).status_code == 404
     r = c.post("/entrevistas", headers=H, json=dict(cd_sistema=1, sigla="GAI", intencao="ALGO_NOVO", relato="preciso de um cadastro novo",
                                                     ponto_partida=dict(caminho="x" * 301, fonte="livre")))
     assert r.status_code == 422
+
+
+def test_varios_pontos_no_mock():
+    pts = [dict(caminho="Cadastro > Alienação", menu_id="m11", fonte="wiki"), dict(caminho="Relatório > Extrato da Alienação",
+                                                                                   menu_id="m21", fonte="wiki")]
+    e = nova("Quero mostrar a data do edital na alienação e no extrato.", intencao="MUDAR_EXISTENTE", pontos_partida=pts)
+    func = next(x for x in e["segmentos"][0]["slots"] if x["codigo"] == "funcionalidade")
+    assert func["valor"] == "Menu: Cadastro > Alienação; Menu: Relatório > Extrato da Alienação" and func["preenchido"]
+    pq = [p for p in e["perguntas"] if p["slot"] == "o_que_muda"]
+    assert [p["ponto"] for p in pq] == [1, 2] and pq[0]["opcoes"][-1] == "Não sei informar" and len(pq[0]["opcoes"]) == 7
+    assert [d["ponto"] for d in e["documentos"]] == [1, 2]
+    e2 = valida("EstadoEntrevista", c.post(f"/entrevistas/{e['id']}/respostas", headers=H, json={"respostas": [
+        {"id": pq[0]["id"], "texto": "Mostrar a data do edital"}, {"id": pq[1]["id"], "texto": "Incluir a coluna da data"}]}).json())
+    muda = next(x for x in e2["segmentos"][0]["slots"] if x["codigo"] == "o_que_muda")
+    assert muda["valor"] == "[Cadastro > Alienação] Mostrar a data do edital; [Relatório > Extrato da Alienação] Incluir a coluna da data"
+    r = c.post("/entrevistas", headers=H, json=dict(cd_sistema=1, sigla="GAI", intencao="MUDAR_EXISTENTE", relato="relato longo o bastante",
+                                                    ponto_partida=pts[0], pontos_partida=pts))
+    assert r.status_code == 422                                   # os dois formatos juntos
 
 
 def test_documentos_lidos_no_mock():

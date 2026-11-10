@@ -10,6 +10,12 @@
         "texto": {
           "title": "Texto",
           "type": "string"
+        },
+        "html": {
+          "default": "",
+          "description": "1.5.4: o texto pronto para mostrar (tabelas, listas, riscado, referências), HTML seguro gerado pelo sos-ia: todo o texto da wiki vem escapado; só tags p, br, table, thead, tbody, tr, th, td, ul, ol, li, del, strong, span e div, com classes sosia-*",
+          "title": "Html",
+          "type": "string"
         }
       },
       "required": [
@@ -21,7 +27,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "Saída de GET /documentacao: a página inteira, seção por seção, na ordem da wiki (sem as seções revogadas).",
+  "description": "Saída de GET /documentacao: a página inteira, seção por seção, na ordem da wiki (sem as seções revogadas). 1.5.2: na página\nde regras de negócio, só as regras que a busca trouxe nesta entrevista (com a regra-mãe e as sub-regras).",
   "properties": {
     "pagina": {
       "title": "Pagina",
@@ -41,6 +47,25 @@
       },
       "title": "Secoes",
       "type": "array"
+    },
+    "parcial": {
+      "default": false,
+      "description": "1.5.2: true = só parte das seções (a regra que casou); a página tem secoes_total seções",
+      "title": "Parcial",
+      "type": "boolean"
+    },
+    "secoes_total": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "1.5.2: quantas seções a página tem (sem as revogadas)",
+      "title": "Secoes Total"
     }
   },
   "required": [
@@ -53,5 +78,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/Documentacao.schema.json",
-  "x-versao-contrato": "1.5.0"
+  "x-versao-contrato": "1.5.4"
 }

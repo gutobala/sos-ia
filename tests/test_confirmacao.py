@@ -173,3 +173,24 @@ def test_valida_vinculo():
         cf.valida_vinculo(dois, vinculo(("CORRETIVO", 1), ("EVOLUTIVO", 3), cd_pacote=7), gravado)
     with pytest.raises(cf.ConfirmacaoInvalida):                                          # outro pacote
         cf.valida_vinculo(dois, vinculo(("CORRETIVO", 1), ("EVOLUTIVO", 2), cd_pacote=8), gravado)
+
+
+# ---------------------------------------------------------------- 1.5.1: vários pontos de partida
+def test_conteudo_ignora_marca_do_ponto_e_nao_sei_informar():
+    assert roteiros.conteudo("[Cadastro > Parcelamento] Alterar") == "alterar"
+    assert roteiros.conteudo("[A] Não sei informar; [B] não sei") == ""
+    assert not roteiros.preenchido("EVOLUTIVO_EXISTENTE", "o_que_muda", "Não sei informar")
+    assert roteiros.preenchido("EVOLUTIVO_EXISTENTE", "o_que_muda", "[A] Incluir a data do edital no cadastro")
+    assert roteiros.marca_ponto("Relatório > [x]") == "[Relatório > (x)] "
+    assert roteiros.opcoes_do_ponto(["Incluir parcelamento", "Alterar", "Alterar"]) == ["Incluir parcelamento", "Alterar", "Não sei informar"]
+    assert len(roteiros.opcoes_do_ponto()) == 7
+
+
+def test_texto_com_varios_pontos_um_por_linha():
+    k = contrato("EVOLUTIVO_EXISTENTE", valores={1: dict(funcionalidade="Menu: A > B; Menu: C",
+                                                         o_que_muda="[A > B] Incluir o campo; com data; [C] Mostrar o campo")})
+    t1 = cf.monta_grupos(k, escopo(1), n_pontos=2)[0].texto
+    assert "Funcionalidades que serão alteradas:\n- Menu: A > B\n- Menu: C\n" in t1
+    assert "O que muda:\n- [A > B] Incluir o campo; com data\n- [C] Mostrar o campo" in t1
+    t0 = cf.monta_grupos(k, escopo(1))[0].texto                       # sem pontos (ou com 1): como na 1.5.0
+    assert "Funcionalidade que será alterada: Menu: A > B; Menu: C" in t0

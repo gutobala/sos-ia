@@ -56,7 +56,7 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
 - Cabeçalho obrigatório (menos em `/saude`): `X-SOSIA-Token: mock` (em produção: valor de `SOSIA_TOKEN`).
 - Respostas sempre `application/json; charset=utf-8`; erros sempre no formato `Erro` `{erro, detalhe}`.
 
-## Contrato da API (versão 1.5.0) — `contrato_api/`
+## Contrato da API (versão 1.5.4) — `contrato_api/`
 | Rota | Entrada | Saída |
 |---|---|---|
 | `GET /saude` | — | `Saude` (o SOS decide IA × roteiro fixo por `ok`) |
@@ -91,11 +91,31 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
   (só a coluna de vetor em uso) + busca de mentira, na subida e a cada `SOSIA_AQUECER_MIN` (30); `shared_buffers` 1 GB no
   `sosia_db` (`SOSIA_DB_SHARED_BUFFERS`). Evento `tempos` em cada criação. Medição em `dados\aquecimento_medicao.txt`.
 - **1.5.0 (menu e documentação; `PASSAGEM_SOS.md` 4.8):**
-  - `NovaEntrevista.ponto_partida`: o caminho entra na busca (`motor.consulta_rag`) e preenche `onde_ocorre` ou
+  - `NovaEntrevista.ponto_partida`: o caminho entra na busca (`motor.consultas_rag`) e preenche `onde_ocorre` ou
     `funcionalidade` no segmento 1 (`roteiros.slot_do_ponto`). O LLM não troca esse valor (`aplica`). Em "algo novo", o caminho
     vai só para o prompt. Evento `ponto_partida`.
   - `EstadoEntrevista.documentos` (`motor.documentos`: UC, US e RN, uma vez por página, até 5) e `GET /documentacao`.
   - `EscopoEditado.documentos_lidos`, validado contra os documentos mostrados e gravado na v1, junto com o ponto de partida.
+- **1.5.1 (vários pontos; `docs/sosia-1.5.1-pontos-de-partida.md`, medição em `migracao/mede_ponto_partida.py`):**
+  - `NovaEntrevista.pontos_partida` (até 5; `ponto_partida` vale como lista de 1): `Motor._busca` faz uma busca por ponto
+    (`motor.consultas_rag`; catálogo só na 1ª), junta os trechos em rodízio (`junta_docs`) e marca o `ponto`. O prompt recebe até
+    12 trechos (`docs_prompt`), e o índice da regra documentada se refere a essa lista.
+  - `documentos`: até 5 por ponto, sem repetir página. `funcionalidade` / `onde_ocorre` com os caminhos unidos por "; ";
+    `Segmento.ponto` quando o LLM separa uma mudança por ponto (o segmento recebe só o caminho dele).
+  - "O que muda" por ponto (`motor.perguntas_fixas`, `Pergunta.ponto`), com as opções da aplicação (`roteiros.opcoes_do_ponto`:
+    `OPCOES_GENERICAS` + "Não sei informar"; até 7). A resposta vai com a marca `[caminho]` (`roteiros.marca_ponto`), que não
+    conta no mínimo; "não sei informar" deixou de contar como conteúdo. Texto do chamado com um caminho por linha
+    (`confirmacao.informacoes`).
+- **1.5.2 (teste do SOS):** `motor.separa_caminhos` desfaz caminhos de pontos diferentes juntados com " > " na pergunta da IA.
+  Página de regras de negócio: título com a regra que casou (`titulo_documento`), depois dos UC/US do ponto, e o
+  `GET /documentacao` só com essa regra, a mãe e as sub-regras (`secoes_da_regra`, até 10; `Documentacao.parcial` / `secoes_total`).
+- **1.5.3 (pedido do usuário):** `fora_de_escopo` e `outros_sistemas` saíram dos roteiros evolutivos, e `revalida` tira os dois
+  das entrevistas começadas antes. O gatilho de integração tem `para: sustentacao` no `gatilhos.yaml` e não vira pergunta; os
+  sistemas citados entram nas dúvidas do contrato (`motor.termos_integracao` + `roteiros.duvida_integracao`). `fora_escopo` e
+  `integracoes` do contrato vêm vazios.
+- **1.5.4:** `SecaoDocumentacao.html` com o texto da wiki formatado por `nucleo/entrevista/doc_html.py`. O conversor é
+  determinístico e sem dependência: escapa tudo e gera só as próprias tags. Trata tabelas, listas, riscado, referências soltas
+  e as sobras da conversão. Nos 27 mil trechos de UC/US/RN, leva 0,3 ms por trecho, sem nenhuma tag fora da lista.
 - Máximo de 2 rodadas do LLM. **Complemento (1.3.0):** depois delas, se ainda faltar item obrigatório, a entrevista não se
   encerra: `complemento=true` e só as perguntas fixas do que falta (`roteiros.perguntas_complemento`; sem IA, sem gatilho, sem a
   decisão da regra, no máximo 5, ids `c{n}p{i}`), repetidas até completar. Evento `complemento`; `analise_ia` não muda.

@@ -48,6 +48,9 @@ INSTITUCIONAL = {"terracap", "brasil", "brasilia", "brasília", "distrito", "fed
                  "portal", "engesoftware", "capgemini", "abrantes", "ctis"}
 RE_PALAVRA = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ]+")
 CONECTORES = {"de", "da", "do", "dos", "das", "e"}
+# "chefe do NUVIS", "gerente da GEFIS": depois do gatilho e de "do/da/de/no/na", uma palavra só, em maiúsculas, é sigla de unidade
+# (teste do SOS, 10/11). Nome em maiúsculas com sobrenome ("chefe do NUVIS, JOÃO SILVA") e nomes da lista local continuam saindo.
+PREP_UNIDADE = {"de", "da", "do", "dos", "das", "no", "na", "nos", "nas"}
 RE_CUE = re.compile(
     r"(?i)\b(?:solicitante\w{0,2}|requerente\w{0,2}|benefici[aá]ri[ao]s?|pensionista\w{0,2}|servidor[a]?s?|"
     r"empregad[ao]s?|funcion[aá]ri[ao]s?|titular\w{0,2}|gerente\w{0,2}|coordenador[a]?s?|supervisor[a]?s?|"
@@ -103,6 +106,10 @@ def mascara_nomes_por_gatilho(texto, excluir):
                     fim, k = prox2.end(), k + 2
                     continue
             break
+        palavra = matches[inicio].group()
+        prep = texto[cue.end():ini].strip(" .,:").lower()
+        if k == inicio + 1 and palavra.isupper() and prep in PREP_UNIDADE:
+            continue                                      # sigla de unidade, não nome
         trechos.append((ini, fim))
     if not trechos:
         return texto

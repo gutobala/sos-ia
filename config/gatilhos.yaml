@@ -4,9 +4,11 @@
 #   codigo     identificador estável (vai no evento da entrevista)
 #   padrao     expressão regular, sem diferenciar maiúsculas; \b = limite de palavra
 #   pergunta   sugestão de pergunta (o LLM pode adaptar ao contexto)
+#   para       "sustentacao": não pergunta ao usuário; o motor só registra (1.5.3: integração vira dúvida no contrato)
 
 - codigo: integracao
   descricao: dados que vêm de outro sistema ou vão para ele
+  para: sustentacao
   # Palavras curtas e comuns só valem com contexto (o custo de um falso positivo é uma pergunta sem sentido para o usuário):
   # SEI e API só em maiúsculas ou com contexto ("eu sei", "não sei" não contam); "caixa" só como Caixa Econômica / CEF.
   padrao: '\b(benner|(?-i:SEI)|processo (no |do )?sei|sistema eletr[oô]nico de informa[cç][oõ]es|receita( federal)?|serpro|banco do brasil|brb|caixa econ[oô]mica|(?-i:CEF)|siafi|siggo|cartório|cartorio|gdf|integra[cç][aã]o|webservice|(?-i:API))\b'

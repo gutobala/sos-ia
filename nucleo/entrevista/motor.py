@@ -33,11 +33,11 @@ from .. import config, embeddings, llm, pii
 from .. import db as dbm
 from ..menus import catalogo as menus_catalogo
 from ..rag import busca, catalogo
-from . import armazem, confirmacao as cf, roteiros
+from . import armazem, confirmacao as cf, doc_html, roteiros
 from .mock import SLOT_PRINCIPAL
 from .modelos import (CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra, DecisaoRegraDocumentada,
                       Documentacao, Documento, EntrevistaPendente, EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista,
-                      Integracao, Intencao, Menus, NovaEntrevista, Origem, Pergunta, RegraDocumentada, RequisitoContrato, Respostas,
+                      Intencao, Menus, NovaEntrevista, Origem, Pergunta, RegraDocumentada, RequisitoContrato, Respostas,
                       SecaoDocumentacao, Segmento, TipoRequisito, TipoSegmento, VersaoEscopo, VinculoChamados)
 
 MAX_RODADAS = 2
@@ -49,7 +49,8 @@ PROMPT_CONTRATO = os.path.join(config.RAIZ, "prompts", "contrato_v1.md")
 ARQ_GATILHOS = os.path.join(config.RAIZ, "config", "gatilhos.yaml")
 TIPOS_REGRA = ("regras_de_negocio", "mensagens", "caso_de_uso")
 TIPOS_DOCUMENTO = ("caso_de_uso", "user_story", "regras_de_negocio")     # 1.5.0: o que o usuário pode ler no SOS
-MAX_DOCUMENTOS = 5
+MAX_DOCUMENTOS = 5           # por ponto de partida (1.5.1)
+MAX_TRECHOS_PROMPT = 12      # com 1 ponto a busca dá até 8 (5 + 3 regras); com vários, o rodízio corta aqui
 NOME_INTENCAO = {Intencao.PAROU_DE_FUNCIONAR: "Algo parou de funcionar", Intencao.MUDAR_EXISTENTE: "Quero mudar algo que já existe",
                  Intencao.ALGO_NOVO: "Preciso de algo novo"}
 RETENCAO_DIAS = int(config.env("SOSIA_RETENCAO_DIAS", "0")) or None
@@ -61,14 +62,15 @@ SCHEMA_ENTREVISTA = {
     "required": ["segmentos", "perguntas", "regra_documentada_trecho", "regra_documentada_orientacao", "nota", "dicas_medidor"],
     "properties": {
         "segmentos": {"type": "array", "items": {
-            "type": "object", "additionalProperties": False, "required": ["tipo", "resumo", "slots"],
-            "properties": {"tipo": {"type": "string", "enum": _TIPOS}, "resumo": {"type": "string"},
+            "type": "object", "additionalProperties": False, "required": ["tipo", "resumo", "ponto", "slots"],
+            "properties": {"tipo": {"type": "string", "enum": _TIPOS}, "resumo": {"type": "string"}, "ponto": {"type": "integer"},
                            "slots": {"type": "array", "items": {"type": "object", "additionalProperties": False,
                                                                 "required": ["codigo", "valor"],
                                                                 "properties": {"codigo": {"type": "string"}, "valor": {"type": "string"}}}}}}},
         "perguntas": {"type": "array", "items": {
-            "type": "object", "additionalProperties": False, "required": ["segmento", "slot", "texto", "dica", "opcoes"],
-            "properties": {"segmento": {"type": "integer"}, "slot": {"type": "string"}, "texto": {"type": "string"},
+            "type": "object", "additionalProperties": False, "required": ["segmento", "slot", "ponto", "texto", "dica", "opcoes"],
+            "properties": {"segmento": {"type": "integer"}, "slot": {"type": "string"}, "ponto": {"type": "integer"},
+                           "texto": {"type": "string"},
                            "dica": {"type": "string"}, "opcoes": {"type": "array", "items": {"type": "string"}}}}},
         "regra_documentada_trecho": {"type": "integer"},
         "regra_documentada_orientacao": {"type": "string"},
@@ -111,6 +113,21 @@ def detecta_gatilhos(texto):
     return [g["codigo"] for g in gatilhos() if g["rx"].search(t)]
 
 
+def gatilhos_da_sustentacao():
+    """Gatilhos que não viram pergunta ao usuário (`para: sustentacao` no gatilhos.yaml; 1.5.3: o de integração)."""
+    return {g["codigo"] for g in gatilhos() if g.get("para") == "sustentacao"}
+
+
+def termos_integracao(texto):
+    """Os sistemas que o usuário citou (palavras do gatilho de integração), na ordem em que aparecem."""
+    g = next((g for g in gatilhos() if g["codigo"] == "integracao"), None)
+    return [m.group(0) for m in g["rx"].finditer(roteiros.sem_nao_sei(texto))] if g else []
+
+
+def texto_do_usuario(est):
+    return est["texto"] + "\n" + "\n".join(r["resposta"] for r in est["respostas"])
+
+
 def resolve_sistema(conn, sigla):
     """(sistema_id, chave da wiki) pela sigla do SOS (ou alias). Chave da wiki = sigla minúscula com '_' no lugar de '-'."""
     r = conn.execute("""SELECT id, sigla FROM apf.sistema WHERE upper(sigla) = upper(%s)
@@ -137,13 +154,16 @@ def tempos_rag():
     return dict(getattr(_medicao, "tempos", {}))
 
 
-def rag(conn, intencao, sistema_id, wiki, texto):
+def rag(conn, intencao, sistema_id, wiki, texto, com_catalogo=True):
     """(docs, candidatos). docs = trechos numerados da wiki para o prompt (híbrida + regras de negócio no corretivo).
-    Mede o vetor da consulta (API de embeddings), a busca na wiki e o catálogo em `tempos_rag()`."""
+    Mede o vetor da consulta (API de embeddings), a busca na wiki e o catálogo em `tempos_rag()`.
+    `com_catalogo=False` (1.5.1, do 2º ponto de partida em diante): só a wiki; os candidatos vêm da busca do 1º ponto."""
     docs, cand = [], []
     q = texto[:4000]
     tempos, t = {}, time.time()
     _medicao.tempos = tempos
+    if not com_catalogo:
+        sistema_id = None
     if wiki or (sistema_id and intencao != Intencao.ALGO_NOVO):
         embeddings.consulta_sql(q)                       # o vetor fica em cache: busca e catálogo não chamam a API de novo
         tempos["embeddings_s"], t = round(time.time() - t, 2), time.time()
@@ -184,39 +204,123 @@ def sem_riscados(docs):
 
 def documentos(docs):
     """Documentação relacionada (1.5.0): dos trechos do RAG (já sem os revogados), só casos de uso, user stories e regras de
-    negócio, uma vez por página, na ordem da busca, até 5."""
-    out, vistos = [], set()
+    negócio, uma vez por página, na ordem da busca, até 5. 1.5.1: até 5 por ponto de partida, agrupados pelo ponto (a página
+    fica no ponto que a trouxe primeiro, no rodízio de junta_docs)."""
+    out, vistos, por_ponto = [], set(), {}
     for d in docs:
-        if d["tipo"] in TIPOS_DOCUMENTO and d["pagina"] not in vistos:
+        k = d.get("ponto")
+        if d["tipo"] in TIPOS_DOCUMENTO and d["pagina"] not in vistos and por_ponto.get(k, 0) < MAX_DOCUMENTOS:
             vistos.add(d["pagina"])
-            out.append(Documento(pagina=d["pagina"], titulo=d["titulo"] or d["pagina"], tipo=d["tipo"], secao=d["secao"] or None,
-                                 similaridade=d["cos"]))
-    return out[:MAX_DOCUMENTOS]
+            por_ponto[k] = por_ponto.get(k, 0) + 1
+            out.append(Documento(pagina=d["pagina"], titulo=titulo_documento(d), tipo=d["tipo"], secao=d["secao"] or None,
+                                 similaridade=d["cos"], ponto=k))
+    # 1.5.2: dentro de cada ponto, casos de uso e user stories antes das regras (a página geral de regras é do sistema todo)
+    return sorted(out, key=lambda x: (x.ponto or 0, x.tipo == "regras_de_negocio"))
 
 
-def consulta_rag(est):
-    """Texto da busca: o caminho do menu (as páginas da wiki citam o menu) antes do relato."""
-    p = est.get("ponto")
-    return (f"Menu: {p['caminho']}.\n" if p else "") + est["texto"]
+def titulo_documento(d):
+    """Título para o usuário. Na página de regras de negócio (uma só para o sistema todo, "gai - regras de negocio"), o nome da
+    regra que casou: "Regras de negócio: RN99. Cálculo para 1°, 2° e 3° Edital"."""
+    if d["tipo"] == "regras_de_negocio" and d.get("secao"):
+        return f"Regras de negócio: {d['secao'].split(' > ')[-1].strip()}"
+    return d["titulo"] or d["pagina"]
 
 
-def valor_ponto(est, tipo):
-    """(slot, valor) que o ponto de partida preenche no segmento 1 deste tipo, ou (None, None)."""
-    p = est.get("ponto")
-    slot = roteiros.slot_do_ponto(tipo) if p else None
-    return (slot, p["valor"]) if slot else (None, None)
+MAX_SECOES_REGRA = 10
+
+
+def secoes_da_regra(secoes, casadas):
+    """Seções de uma página de regras de negócio a mostrar (1.5.2): as que a busca trouxe nesta entrevista, com as regras-mãe
+    (prefixo do caminho da seção) e as sub-regras, na ordem da página, até 10. Sem seção casada, None (a página inteira)."""
+    casadas = [c for c in casadas if c]
+    if not casadas or not any(s in casadas for s in secoes):
+        return None
+    def vale(s):
+        return any(s == c or s.startswith(c + " > ") or (c.startswith(s + " > ") and s.count(" > ") >= 2) for c in casadas)
+    manter = [i for i, s in enumerate(secoes) if vale(s)]
+    return manter[:MAX_SECOES_REGRA]
+
+
+def pontos(est):
+    """Pontos de partida do estado (1.5.1: lista); entrevista da 1.5.0 guardava um só em "ponto"."""
+    return est.get("pontos") or ([est["ponto"]] if est.get("ponto") else [])
+
+
+def consultas_rag(est):
+    """[(ponto, texto da busca)]: uma busca por ponto, com o caminho do menu antes do relato (as páginas da wiki citam o menu);
+    o relato sozinho só quando não há ponto. `ponto` é o número (1 = o primeiro) ou None."""
+    ps = pontos(est)
+    if not ps:
+        return [(None, est["texto"])]
+    return [(i, f"Menu: {p['caminho']}.\n{est['texto']}") for i, p in enumerate(ps, 1)]
+
+
+def junta_docs(listas):
+    """Junta os trechos das buscas por ponto em rodízio (1º de cada ponto, depois o 2º…), sem repetir página+seção, e marca o
+    ponto de cada trecho. Com uma busca só, a ordem é a dela."""
+    out, vistos = [], set()
+    for i in range(max((len(d) for _, d in listas), default=0)):
+        for k, docs in listas:
+            if i < len(docs):
+                d = docs[i]
+                chave = d["pagina"] + "|" + (d.get("secao") or "")
+                if chave not in vistos:
+                    vistos.add(chave)
+                    out.append(dict(d, ponto=k))
+    return out
+
+
+def docs_prompt(est):
+    """Trechos que vão ao prompt (numerados); o índice da regra documentada se refere a esta lista."""
+    return est["docs"][:MAX_TRECHOS_PROMPT]
+
+
+def valor_ponto(est, tipo, ponto=None):
+    """(slot, valor) que o(s) ponto(s) de partida preenche(m) num segmento deste tipo, ou (None, None). `ponto`: o do segmento
+    (só aquele caminho); sem ele, todos os caminhos unidos por "; "."""
+    ps = pontos(est)
+    slot = roteiros.slot_do_ponto(tipo) if ps else None
+    if not slot:
+        return None, None
+    if ponto and 1 <= ponto <= len(ps):
+        return slot, ps[ponto - 1]["valor"]
+    return slot, roteiros.valor_dos_pontos([p["valor"] for p in ps])
+
+
+def separa_caminhos(texto, est):
+    """1.5.2: o LLM juntava os caminhos de pontos diferentes como se fossem uma tela só ("Em Venda Direta > Edital … > Tela de
+    impressão, o que você faz…", teste do SOS de 10/11). Onde um caminho é seguido de " > " e de outro, troca por "; "."""
+    cams = [p["caminho"] for p in pontos(est)]
+    if len(cams) < 2 or not texto:
+        return texto
+    antes = None
+    while antes != texto:
+        antes = texto
+        for a in cams:
+            for b in cams:
+                if a != b:
+                    texto = texto.replace(f"{a} > {b}", f"{a}; {b}")
+    return texto
 
 
 def _fmt_ponto(est):
-    p = est.get("ponto")
-    if not p:
+    ps = pontos(est)
+    if not ps:
         return "(não informado: pergunte onde, se faltar)"
+    lista = "\n".join(f'{i}. "{p["caminho"]}"' for i, p in enumerate(ps, 1))
     if Intencao(est["intencao"]) == Intencao.ALGO_NOVO:
-        return (f'"{p["caminho"]}" — é ONDE FICARIA o que o usuário quer (não é uma tela que já faz isso). Use como contexto; não '
-                "preencha nenhum item só com ele.")
-    return (f'"{p["caminho"]}" — o usuário já indicou por onde entra no sistema; o item onde_ocorre (corretivo) ou funcionalidade '
-            "(evolutivo) já está preenchido com ele. NÃO pergunte onde é. Pergunte o que acontece a partir dali (corretivo) ou o que "
-            "muda nessa tela (evolutivo), citando o caminho.")
+        return (f"{lista}\n— é ONDE FICARIA o que o usuário quer (não é uma tela que já faz isso). Use como contexto; não preencha "
+                "nenhum item só com ele.")
+    txt = (f"{lista}\n— o usuário já indicou por onde entra no sistema; o item onde_ocorre (corretivo) ou funcionalidade "
+           "(evolutivo) já está preenchido com " + ("ele" if len(ps) == 1 else "os caminhos") + ". NÃO pergunte onde é. Pergunte o "
+           "que acontece a partir dali (corretivo) ou o que muda nessa tela (evolutivo), citando o caminho.")
+    if len(ps) > 1:
+        txt += ("\nCada número é uma TELA DIFERENTE: nunca junte dois caminhos com \">\" como se fossem um só. Numa pergunta que vale "
+                "para mais de uma tela, cite os caminhos separados por \"; \" (ex.: \"Em A; B, o que você faz…\").")
+        txt += ("\nCom mais de um ponto: o que muda é perguntado POR PONTO (uma pergunta por caminho, com `ponto` = o número dele). "
+                "Se o relato deixar claro que cada ponto é uma mudança à parte, você pode criar um segmento por ponto, com `ponto` "
+                "= o número; senão, use `ponto` 0 (o segmento vale para todos).")
+    return txt
 
 
 # ---------------------------------------------------------------- montagem do prompt
@@ -225,13 +329,14 @@ def _fmt_segs(segs):
         return "(vazio)"
     out = []
     for s in segs:
-        out.append(f"Segmento {s.n} ({s.tipo.value}): {s.resumo}")
+        out.append(f"Segmento {s.n} ({s.tipo.value})" + (f" [ponto {s.ponto}]" if s.ponto else "") + f": {s.resumo}")
         out += [f"  - {x.codigo}: {x.valor or ''}" for x in s.slots]
     return "\n".join(out)
 
 
 def _fmt_respostas(est):
-    return "\n".join(f"- [{r['slot']}] {r['pergunta']} → {r['resposta']}" for r in est["respostas"]) or "(nenhuma)"
+    return "\n".join(f"- [{r['slot']}]" + (f" (ponto {r['ponto']})" if r.get("ponto") else "") + f" {r['pergunta']} → {r['resposta']}"
+                     for r in est["respostas"]) or "(nenhuma)"
 
 
 def _fmt_decisao(est):
@@ -250,33 +355,21 @@ def _fmt_decisao(est):
             "não volte a indicar regra documentada (use 0).")
 
 
-def tem_slot_outros_sistemas(segs):
-    """Algum segmento evolutivo: o item "outros sistemas" já pergunta sobre integração (segmentos em dict ou Segmento)."""
-    for s in segs:
-        slots = s["slots"] if isinstance(s, dict) else s.slots
-        if any((x["codigo"] if isinstance(x, dict) else x.codigo) == "outros_sistemas" for x in slots):
-            return True
-    return False
-
-
 def _pendentes(est):
-    """Gatilhos detectados e ainda não perguntados. O de integração só vale quando não há item "outros sistemas" (pedido só
-    corretivo): nos evolutivos a pergunta do item já cobre, e repetir a mesma pergunta parece defeito ao usuário (teste de 06/11)."""
-    texto = est["texto"] + "\n" + "\n".join(r["resposta"] for r in est["respostas"])
-    pend = [c for c in detecta_gatilhos(texto) if c not in est["gatilhos_feitos"]]
-    # 1ª rodada: ainda não há segmentos; vale o roteiro da opção do cardápio
-    evolutivo = (tem_slot_outros_sistemas(est["segs"]) if est["segs"]
-                 else roteiros.roteiro_da_intencao(Intencao(est["intencao"])) != TipoSegmento.CORRETIVO)
-    if "integracao" in pend and evolutivo:
-        pend.remove("integracao")
-    return pend
+    """Gatilhos detectados e ainda não perguntados. 1.5.3: o de integração não é perguntado ao usuário (a Sustentação responde;
+    vira dúvida no contrato)."""
+    fora = set(est["gatilhos_feitos"]) | gatilhos_da_sustentacao()
+    return [c for c in detecta_gatilhos(texto_do_usuario(est)) if c not in fora]
 
 
 def prompt_entrevista(est, segs):
     pend = _pendentes(est)
     gat = {g["codigo"]: g for g in gatilhos()}
     cand = "\n".join(f"{i}. {c['nome']}" + (f" ({c['modulo']})" if c.get("modulo") else "") for i, c in enumerate(est["candidatos"], 1))
-    docs = "\n\n".join(f"[{i}] ({d['tipo']}) {d['titulo']} / {d['secao'] or ''}\n{d['texto']}" for i, d in enumerate(est["docs"], 1))
+    varios = len(pontos(est)) > 1
+    docs = "\n\n".join(f"[{i}] ({d['tipo']}) {d['titulo']} / {d['secao'] or ''}"
+                       + (f" (ponto {d['ponto']})" if varios and d.get("ponto") else "") + f"\n{d['texto']}"
+                       for i, d in enumerate(docs_prompt(est), 1))
     return (open(PROMPT_ENTREVISTA, encoding="utf-8").read()
             .replace("{{SISTEMA}}", est["sigla"]).replace("{{INTENCAO}}", NOME_INTENCAO[Intencao(est["intencao"])])
             .replace("{{RODADA}}", str(est["rodada"])).replace("{{RELATO}}", est["texto"]).replace("{{PONTO_PARTIDA}}", _fmt_ponto(est))
@@ -289,7 +382,8 @@ def prompt_entrevista(est, segs):
 
 # ---------------------------------------------------------------- pós-processamento determinístico
 def _segs(est):
-    return [Segmento.model_validate(s) for s in est["segs"]]
+    """Segmentos do estado, revalidados (tira os itens que saíram do roteiro numa entrevista começada antes)."""
+    return [roteiros.revalida(Segmento.model_validate(s)) for s in est["segs"]]
 
 
 def aplica(est, resp, pendentes=()):
@@ -297,16 +391,23 @@ def aplica(est, resp, pendentes=()):
     `pendentes`: gatilhos mostrados ao LLM nesta rodada; pergunta "gatilho" só vale se houver algum (no máximo uma por gatilho)."""
     # regra documentada: só um trecho que o RAG trouxe, de tipo regra/mensagem/UC, só no corretivo e só uma vez
     i = resp["regra_documentada_trecho"]
-    if (not est.get("regra") and Intencao(est["intencao"]) == Intencao.PAROU_DE_FUNCIONAR and 1 <= i <= len(est["docs"])
-            and est["docs"][i - 1]["tipo"] in TIPOS_REGRA and resp["regra_documentada_orientacao"].strip()):
-        d = est["docs"][i - 1]
+    mostrados = docs_prompt(est)
+    if (not est.get("regra") and Intencao(est["intencao"]) == Intencao.PAROU_DE_FUNCIONAR and 1 <= i <= len(mostrados)
+            and mostrados[i - 1]["tipo"] in TIPOS_REGRA and resp["regra_documentada_orientacao"].strip()):
+        d = mostrados[i - 1]
         est["regra"] = dict(pagina=d["pagina"], secao=d["secao"], trecho=d["texto"][:600], similaridade=d["cos"],
                             orientacao=resp["regra_documentada_orientacao"].strip())
     fixo = tipo_fixo_seg1(est)
+    n_pontos = len(pontos(est))
+    ponto_ok = (lambda k: k if n_pontos > 1 and isinstance(k, int) and 1 <= k <= n_pontos else None)
 
     antigos = {(s.n, s.tipo): {x.codigo: x.valor for x in s.slots if x.valor} for s in _segs(est)}
+    brutos_segs = resp["segmentos"][:MAX_SEGMENTOS]
+    pontos_segs = [ponto_ok(s.get("ponto")) for s in brutos_segs]
+    if pontos_segs and pontos_segs[0] and set(pontos_segs) != set(range(1, n_pontos + 1)):
+        pontos_segs[0] = None                             # algum ponto ficaria sem segmento: o 1º vale para todos
     segs = []
-    for s in resp["segmentos"][:MAX_SEGMENTOS]:
+    for s, ponto_seg in zip(brutos_segs, pontos_segs):
         tipo = TipoSegmento(s["tipo"])
         n = len(segs) + 1
         brutos = {x["codigo"]: x["valor"].strip() for x in s["slots"] if x["valor"].strip()}
@@ -320,35 +421,39 @@ def aplica(est, resp, pendentes=()):
         for c, v in antigos.get((n, tipo), {}).items():   # o LLM não apaga o que o usuário já respondeu
             if c not in valores or len(valores[c]) < len(v) * 0.5:
                 valores[c] = v
-        slot_p, valor_p = valor_ponto(est, tipo)
-        if n == 1 and slot_p in codigos:                  # 1.5.0: o menu escolhido pelo usuário vale; o LLM não troca
+        slot_p, valor_p = valor_ponto(est, tipo, ponto_seg)
+        if slot_p in codigos and (n == 1 or ponto_seg):   # 1.5.0: o menu escolhido pelo usuário vale; o LLM não troca
             valores[slot_p] = valor_p
-        segs.append(roteiros.revalida(Segmento(n=n, tipo=tipo, resumo=s["resumo"][:300] or "Pedido", slots=roteiros.slots_vazios(tipo, valores))))
+        segs.append(roteiros.revalida(Segmento(n=n, tipo=tipo, resumo=s["resumo"][:300] or "Pedido", ponto=ponto_seg,
+                                               slots=roteiros.slots_vazios(tipo, valores))))
     if not segs:
         segs = segmentos_fixos(est)
     est["segs"] = [s.model_dump(mode="json") for s in segs]
 
-    # perguntas: só slot vazio do roteiro ou gatilho; uma por slot; máx. 5
+    # perguntas: só slot vazio do roteiro ou gatilho; uma por slot (por ponto, no "o que muda" com vários pontos); máx. 5
     ps, vistos, n_gat = [], set(), 0
-    if tem_slot_outros_sistemas(segs):                 # o LLM criou um segmento evolutivo: o item já cobre a integração
-        pendentes = [c for c in pendentes if c != "integracao"]
     if est["rodada"] <= MAX_RODADAS:
         por_n = {s.n: s for s in segs}
         for p in resp["perguntas"]:
             s = por_n.get(p["segmento"]) or segs[0]
             vazios = {x.codigo for x in s.slots if not x.preenchido}
-            chave = (s.n, p["slot"]) if p["slot"] != "gatilho" else ("g", p["texto"][:40])
+            por_ponto = p["slot"] == roteiros.slot_por_ponto(s.tipo) and not s.ponto
+            k = ponto_ok(p.get("ponto")) if por_ponto else None
+            chave = (s.n, p["slot"], k) if p["slot"] != "gatilho" else ("g", p["texto"][:40])
             gat_ok = p["slot"] == "gatilho" and n_gat < len(pendentes)
             if (gat_ok or p["slot"] in vazios) and chave not in vistos and p["texto"].strip():
                 vistos.add(chave)
                 n_gat += p["slot"] == "gatilho"
-                ps.append(dict(segmento=s.n, slot=p["slot"], texto=p["texto"].strip(), dica=p["dica"].strip() or None,
-                               opcoes=opcoes(p.get("opcoes"), p["slot"])))
+                ps.append(dict(segmento=s.n, slot=p["slot"], texto=separa_caminhos(p["texto"].strip(), est),
+                               dica=separa_caminhos(p["dica"].strip(), est) or None, ponto=k,
+                               opcoes=opcoes_da_pergunta(est, s, p["slot"], p.get("opcoes"))))
         cobertos = {(p["segmento"], p["slot"]) for p in ps}
+        cobertos |= {(p["segmento"], p["slot"], p["ponto"]) for p in ps}
         for f in roteiros.faltando(segs):                   # o LLM esqueceu um slot vazio: pergunta fixa do roteiro
-            if (f.segmento, f.slot) not in cobertos:
-                t, d = roteiros.pergunta_do_item(segs, f)
-                ps.append(dict(segmento=f.segmento, slot=f.slot, texto=t, dica=d, opcoes=roteiros.opcoes_fixas(f.slot)))
+            if (f.segmento, f.slot) in cobertos and not any(p["segmento"] == f.segmento and p["slot"] == f.slot and p["ponto"]
+                                                             for p in ps):
+                continue                                    # pergunta geral do LLM cobre o item (e todos os pontos)
+            ps += [p for p in perguntas_fixas(est, segs, f) if (p["segmento"], p["slot"], p["ponto"]) not in cobertos]
     est["perguntas"] = [dict(p, id=f"r{est['rodada']}p{i}") for i, p in enumerate(ps[:MAX_PERGUNTAS], 1)]
 
     est["nota"] = nota(segs, resp["nota"])
@@ -375,6 +480,36 @@ def opcoes(da_ia, slot):
     return out[:MAX_OPCOES] + roteiros.opcoes_fixas(slot)
 
 
+def e_pergunta_de_ponto(est, seg, slot):
+    """A pergunta é o "o que muda" de um segmento que parte de um ponto de partida (1.5.1): as opções são os tipos de mudança."""
+    return bool(pontos(est)) and slot == roteiros.slot_por_ponto(seg.tipo)
+
+
+def opcoes_da_pergunta(est, seg, slot, da_ia=None):
+    """Opções de uma pergunta: no "o que muda" de um ponto, as da aplicação (fluxos do caso de uso ligado ou genéricas, sem
+    LLM); nas demais, as da IA filtradas (opcoes)."""
+    if e_pergunta_de_ponto(est, seg, slot):
+        return roteiros.opcoes_do_ponto()
+    return opcoes(da_ia, slot)
+
+
+def perguntas_fixas(est, segs, f):
+    """Perguntas fixas de um item de `faltando` (roteiro sem IA ou item que o LLM esqueceu). O "o que muda" de um segmento sem
+    ponto próprio, com 2+ pontos e ainda sem resposta, vira uma pergunta por ponto ("Em <caminho>, o que deve mudar?")."""
+    s = next((x for x in segs if x.n == f.segmento), None)
+    ps = pontos(est)
+    if s is not None and e_pergunta_de_ponto(est, s, f.slot):
+        valor = next((x.valor for x in s.slots if x.codigo == f.slot), None)
+        if not roteiros.conteudo(valor):                    # sem resposta ainda: pergunta citando o caminho
+            alvo = [(s.ponto, ps[s.ponto - 1])] if s.ponto else [(i if len(ps) > 1 else None, p) for i, p in enumerate(ps, 1)]
+            return [dict(segmento=s.n, slot=f.slot, ponto=k, opcoes=roteiros.opcoes_do_ponto(),
+                         **dict(zip(("texto", "dica"), roteiros.pergunta_do_ponto(p["caminho"])))) for k, p in alvo]
+    t, d = roteiros.pergunta_do_item(segs, f)
+    return [dict(segmento=f.segmento, slot=f.slot, texto=t, dica=d, ponto=None,
+                 opcoes=roteiros.opcoes_do_ponto() if s is not None and e_pergunta_de_ponto(est, s, f.slot)
+                 else roteiros.opcoes_fixas(f.slot))]
+
+
 def nota(segs, nota_llm=None):
     """Média entre a nota do LLM e a fração de slots obrigatórios preenchidos (o medidor não chega a 100 com slot vazio; "Não sei"
     não conta como preenchido)."""
@@ -387,6 +522,8 @@ def nota(segs, nota_llm=None):
 def segmentos_fixos(est):
     t = roteiros.roteiro_da_intencao(Intencao(est["intencao"]))
     valores = {SLOT_PRINCIPAL[t]: est["texto"].strip()[:1500]}
+    if pontos(est) and roteiros.slot_por_ponto(t) == SLOT_PRINCIPAL[t] and len(pontos(est)) > 1:
+        valores = {}                                    # 1.5.1: com vários pontos, o que muda é perguntado por ponto
     slot_p, valor_p = valor_ponto(est, t)
     if slot_p:
         valores[slot_p] = valor_p
@@ -404,8 +541,7 @@ def roteiro_fixo(est):
         ps += [dict(segmento=1, slot="gatilho", texto=gat[c]["pergunta"], dica=None, opcoes=[]) for c in pend[:1]]
         est["gatilhos_feitos"] += pend[:1]
         for f in roteiros.faltando(segs):
-            t, d = roteiros.pergunta_do_item(segs, f)
-            ps.append(dict(segmento=f.segmento, slot=f.slot, texto=t, dica=d, opcoes=roteiros.opcoes_fixas(f.slot)))
+            ps += perguntas_fixas(est, segs, f)
     est["perguntas"] = [dict(p, id=f"r{est['rodada']}p{i}") for i, p in enumerate(ps[:MAX_PERGUNTAS], 1)]
     est["nota"] = nota(segs)
     est["dicas"] = [f"Falta: {f.rotulo}" for f in roteiros.faltando(segs)][:3]
@@ -475,17 +611,34 @@ class Motor:
             analise_ia=analise_ia)
 
     @staticmethod
-    def _ponto(req, conn):
-        """Ponto de partida no estado. Caminho digitado (fonte livre) segue a regra do relato (anonimizado, menos no modo contrato);
-        rótulo de menu não tem dado pessoal."""
-        p = req.ponto_partida
-        if not p:
-            return None
-        livre = p.fonte.value == "livre"
-        caminho = _anonimiza_resposta(p.caminho.strip(), conn, 300) if livre else p.caminho.strip()
-        detalhe = (_anonimiza_resposta(p.detalhe.strip(), conn, 500) if livre else p.detalhe.strip()) if p.detalhe else None
-        return dict(caminho=caminho, detalhe=detalhe, menu_id=p.menu_id, fonte=p.fonte.value,
-                    valor=roteiros.valor_do_ponto(caminho, p.fonte.value, detalhe))
+    def _pontos(req, conn):
+        """Pontos de partida no estado (1.5.1: lista; o ponto_partida da 1.5.0 vira lista de 1). Caminho digitado (fonte livre)
+        segue a regra do relato (anonimizado, menos no modo contrato); rótulo de menu não tem dado pessoal. Repetidos saem."""
+        out, vistos = [], set()
+        for p in req.pontos():
+            livre = p.fonte.value == "livre"
+            caminho = _anonimiza_resposta(p.caminho.strip(), conn, 300) if livre else p.caminho.strip()
+            detalhe = (_anonimiza_resposta(p.detalhe.strip(), conn, 500) if livre else p.detalhe.strip()) if p.detalhe else None
+            chave = (p.menu_id or caminho.lower(), p.fonte.value)
+            if chave not in vistos:
+                vistos.add(chave)
+                out.append(dict(caminho=caminho, detalhe=detalhe, menu_id=p.menu_id, fonte=p.fonte.value,
+                                valor=roteiros.valor_do_ponto(caminho, p.fonte.value, detalhe)))
+        return out
+
+    @staticmethod
+    def _busca(conn, intencao, sid, wiki, est):
+        """Uma busca por ponto de partida (1.5.1); docs juntos em rodízio e marcados pelo ponto; candidatos só da 1ª busca.
+        Os tempos das buscas se somam."""
+        listas, cand, tempos = [], [], {}
+        for i, (k, q) in enumerate(consultas_rag(est)):
+            d, c = rag(conn, intencao, sid, wiki, q) if i == 0 else rag(conn, intencao, sid, wiki, q, com_catalogo=False)
+            listas.append((k, sem_riscados(d)))
+            cand = c if i == 0 else cand
+            for e, s in tempos_rag().items():
+                tempos[e] = round(tempos.get(e, 0) + s, 2)
+        _medicao.tempos = dict(tempos, buscas=len(listas))
+        return junta_docs(listas), cand
 
     def _carrega(self, conn, eid):
         row = armazem.obter(conn, eid)
@@ -513,19 +666,21 @@ class Motor:
             marca("pii_s")
             est = dict(intencao=req.intencao.value, sigla=req.sigla, wiki=wiki, texto=texto, notas_pii=notas, rodada=1, segs=[],
                        perguntas=[], respostas=[], gatilhos_feitos=[], docs=[], candidatos=[], regra=None, decisao=None, nota=0, dicas=[],
-                       contrato=None, ponto=self._ponto(req, conn))
+                       contrato=None, pontos=self._pontos(req, conn))
             _medicao.tempos = {}
             try:
-                docs, est["candidatos"] = rag(conn, req.intencao, sid, wiki, consulta_rag(est))
-                est["docs"] = sem_riscados(docs)
+                est["docs"], est["candidatos"] = self._busca(conn, req.intencao, sid, wiki, est)
             except Exception as e:  # noqa: BLE001  (sem RAG a entrevista continua)
                 conn.rollback()
                 est["notas_pii"].append(f"RAG indisponível: {type(e).__name__}")
             marca("rag_s")
             tempos.update(tempos_rag())
             armazem.criar(app, eid, req, sid, config.MODO_PII, True, est, 0, RETENCAO_DIAS)
-            if est["ponto"]:                                              # 1.5.0: para a Fase 3 medir o efeito do menu
-                armazem.evento(app, eid, 1, "ponto_partida", conteudo={k: est["ponto"][k] for k in ("fonte", "menu_id")})
+            if est["pontos"]:                                             # 1.5.0: para a Fase 3 medir o efeito do menu
+                ev = {k: est["pontos"][0][k] for k in ("fonte", "menu_id")}
+                if len(est["pontos"]) > 1:                                # 1.5.1: todos os pontos, na ordem
+                    ev["pontos"] = [{k: p[k] for k in ("fonte", "menu_id")} for p in est["pontos"]]
+                armazem.evento(app, eid, 1, "ponto_partida", conteudo=ev)
             est["candidatos"] = self._reordena_candidatos(app, eid, est)
             marca("reordena_candidatos_s")
             ia = self._rodada(app, eid, est, imgs)
@@ -565,9 +720,13 @@ class Motor:
                 if conn is None:
                     conn = self.conectar()
                 txt = _anonimiza_resposta(r.texto.strip(), conn, 5000)
-                est["respostas"].append(dict(id=r.id, segmento=p["segmento"], slot=p["slot"], pergunta=p["texto"], resposta=txt))
+                est["respostas"].append(dict(id=r.id, segmento=p["segmento"], slot=p["slot"], pergunta=p["texto"], resposta=txt,
+                                             ponto=p.get("ponto")))
                 if p["slot"] == "gatilho":
                     continue
+                ps_est = pontos(est)
+                if p.get("ponto") and len(ps_est) > 1 and p["ponto"] <= len(ps_est):   # 1.5.1: o item guarda de qual tela é
+                    txt = roteiros.marca_ponto(ps_est[p["ponto"] - 1]["caminho"]) + txt
                 for i, s in enumerate(segs):
                     if s.n == p["segmento"]:
                         sl = [x.model_copy(update={"valor": roteiros.resposta_no_slot(x.codigo, x.valor, txt)}) if x.codigo == p["slot"] else x
@@ -669,9 +828,12 @@ class Motor:
         falt = roteiros.faltando_com_regra(segs, bool(est.get("regra")), est.get("decisao"))
         duvidas = [x for x in c["duvidas"] if x.strip()]
         duvidas += [d for d in roteiros.duvidas_nao_informado(segs) if d not in duvidas]   # "Não sei": sempre, não depende do LLM
+        integ = roteiros.duvida_integracao(termos_integracao(texto_do_usuario(est)))      # 1.5.3: a Sustentação confirma
+        if integ and integ not in duvidas:
+            duvidas.append(integ)
         return Contrato(id=eid, titulo=c["titulo"].strip()[:200] or f"{est['sigla']} - pedido", objetivo=c["objetivo"].strip(),
-                        requisitos=reqs, fora_escopo=[x for x in c["fora_escopo"] if x.strip()], duvidas=duvidas,
-                        integracoes=[Integracao(**x) for x in c["integracoes"]], segmentos=segs, nota=est["nota"], faltando=falt,
+                        requisitos=reqs, fora_escopo=[], duvidas=duvidas,      # 1.5.3: fora de escopo e integrações: Sustentação
+                        integracoes=[], segmentos=segs, nota=est["nota"], faltando=falt,
                         regra_documentada=RegraDocumentada.model_validate(est["regra"]) if est.get("regra") else None,
                         decisao_regra=est.get("decisao"),
                         pode_confirmar=not falt, analise_ia=ia)
@@ -698,12 +860,13 @@ class Motor:
             cf.verifica_confirmavel(k)
             funcs = cf.funcionalidades_confirmadas(escopo, self._candidatos(est))
             lidos = cf.documentos_lidos(escopo, documentos(est["docs"]))
-            grupos = cf.monta_grupos(k, escopo, funcs)
+            ps = pontos(est)
+            grupos = cf.monta_grupos(k, escopo, funcs, n_pontos=len(ps))
             armazem.grava_escopo(app, eid, 0, 0, None, k.model_dump(mode="json"))
             armazem.grava_escopo(app, eid, 1, 1, escopo.cd_usuario,
                                  dict(escopo=escopo.model_dump(mode="json"), grupos=[g.model_dump(mode="json") for g in grupos],
                                       candidatos_confirmados=[dict(id=f.id, nome=f.nome, tipo_ifpug=f.tipo_ifpug) for f in funcs],
-                                      documentos_lidos=lidos, ponto_partida=est.get("ponto")))
+                                      documentos_lidos=lidos, ponto_partida=ps[0] if ps else None, pontos_partida=ps))
             armazem.evento(app, eid, est["rodada"], "confirmacao",
                            conteudo=dict(grupos=[g.tipo.value for g in grupos], requisitos=len(escopo.requisitos),
                                          candidatos_confirmados=[f.id for f in funcs], documentos_lidos=lidos))
@@ -797,9 +960,18 @@ class Motor:
                    ORDER BY ordem""", dict(p=pagina)).fetchall()
             if not rows:
                 raise KeyError(pagina)
-            secoes = [SecaoDocumentacao(secao=r["secao"] or r["titulo_pagina"], texto=r["texto"] or "")
-                      for r in rows if not riscado(r) and (r["texto"] or "").strip()]
-            return Documentacao(pagina=pagina, titulo=rows[0]["titulo_pagina"], tipo=rows[0]["tipo"], secoes=secoes)
+            validas = [r for r in rows if not riscado(r) and (r["texto"] or "").strip()]
+            secoes = [SecaoDocumentacao(secao=r["secao"] or r["titulo_pagina"], texto=r["texto"] or "",
+                                        html=doc_html.para_html(r["texto"])) for r in validas]
+            titulo, total = rows[0]["titulo_pagina"], len(secoes)
+            if rows[0]["tipo"] == "regras_de_negocio":           # 1.5.2: só a regra que casou, não as ~360 seções da página
+                casadas = [d.get("secao") for d in est.get("docs", []) if d["pagina"] == pagina]
+                manter = secoes_da_regra([r["secao"] or "" for r in validas], casadas)
+                if manter is not None:
+                    secoes = [secoes[i] for i in manter]
+                    titulo = titulo_documento(dict(tipo="regras_de_negocio", secao=next(c for c in casadas if c), titulo=titulo))
+            return Documentacao(pagina=pagina, titulo=titulo, tipo=rows[0]["tipo"], secoes=secoes,
+                                parcial=len(secoes) < total, secoes_total=total)
         finally:
             app.close()
             conn.close()
@@ -821,19 +993,14 @@ class Motor:
 
 
 def contrato_fixo(est, segs):
-    """Contrato sem IA: um requisito por segmento a partir dos slots (mesma lógica do mock)."""
-    reqs, fora, integ = [], [], []
+    """Contrato sem IA: um requisito por segmento a partir dos slots (mesma lógica do mock). Fora de escopo e integrações ficam
+    vazios (1.5.3: a Sustentação responde; o sistema citado entra nas dúvidas em `_monta_contrato`)."""
+    reqs = []
     for s in segs:
         v = {x.codigo: x.valor for x in s.slots}
         reqs.append(dict(segmento=s.n, tipo="CORRETIVO" if s.tipo == TipoSegmento.CORRETIVO else "EVOLUTIVO",
                          descricao=(v.get(SLOT_PRINCIPAL[s.tipo]) or s.resumo)[:1000],
                          criterio_aceite=roteiros.criterio_fixo(s.tipo, v)[:1000]))
-        if v.get("fora_de_escopo") and not roteiros.nao_informado(v["fora_de_escopo"]) \
-                and v["fora_de_escopo"].strip().lower() not in ("nada", "não", "nao"):
-            fora.append(v["fora_de_escopo"])
-        if v.get("outros_sistemas") and not roteiros.nao_informado(v["outros_sistemas"]) \
-                and v["outros_sistemas"].strip().lower() not in ("não", "nao", "n"):
-            integ.append(dict(sistema="(a identificar)", sentido="AMBOS", descricao=v["outros_sistemas"]))
     duv = [f"{r['pergunta']} → {r['resposta']}" for r in est["respostas"] if r["slot"] == "gatilho"]
     return dict(titulo=f"{est['sigla']} - {est['texto'].strip()[:80]}", objetivo=est["texto"].strip()[:300], requisitos=reqs,
-                fora_escopo=fora, duvidas=duv, integracoes=integ)
+                fora_escopo=[], duvidas=duv, integracoes=[])

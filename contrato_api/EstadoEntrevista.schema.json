@@ -112,6 +112,20 @@
         "similaridade": {
           "title": "Similaridade",
           "type": "number"
+        },
+        "ponto": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1.5.1: número do ponto de partida cuja busca trouxe a página (1 = o primeiro); nulo sem ponto de partida",
+          "title": "Ponto"
         }
       },
       "required": [
@@ -156,13 +170,27 @@
           "title": "Dica"
         },
         "opcoes": {
-          "description": "respostas rápidas (botões); o texto livre continua valendo e a opção escolhida vai em Resposta.texto. \"Não sei informar\" só vem nos itens que aceitam essa resposta",
+          "description": "respostas rápidas (botões); o texto livre continua valendo e a opção escolhida vai em Resposta.texto. \"Não sei informar\" vem nos itens que aceitam essa resposta e, na 1.5.1, na pergunta \"o que muda\" de um ponto de partida (até 6 tipos de mudança + ele)",
           "items": {
             "type": "string"
           },
-          "maxItems": 5,
+          "maxItems": 7,
           "title": "Opcoes",
           "type": "array"
+        },
+        "ponto": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1.5.1: número do ponto de partida a que a pergunta se refere (com 2 ou mais pontos); nulo nas demais",
+          "title": "Ponto"
         }
       },
       "required": [
@@ -237,6 +265,20 @@
           },
           "title": "Slots",
           "type": "array"
+        },
+        "ponto": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1.5.1: número do ponto de partida (1 = o primeiro de pontos_partida) a que o segmento se refere; nulo com 0 ou 1 ponto, ou quando o segmento vale para todos",
+          "title": "Ponto"
         }
       },
       "required": [
@@ -308,7 +350,7 @@
       "type": "string"
     },
     "versao_contrato": {
-      "default": "1.5.0",
+      "default": "1.5.4",
       "title": "Versao Contrato",
       "type": "string"
     },
@@ -345,11 +387,11 @@
       "type": "array"
     },
     "documentos": {
-      "description": "1.5.0: casos de uso, user stories e regras achados pelo RAG (até 5, uma vez por página, sem os revogados); vazia quando o sistema não tem wiki",
+      "description": "1.5.0: casos de uso, user stories e regras achados pelo RAG (até 5, uma vez por página, sem os revogados); vazia quando o sistema não tem wiki. 1.5.1: até 5 por ponto de partida, agrupados pelo `ponto`, sem repetir página",
       "items": {
         "$ref": "#/$defs/Documento"
       },
-      "maxItems": 5,
+      "maxItems": 25,
       "title": "Documentos",
       "type": "array"
     },
@@ -415,5 +457,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/EstadoEntrevista.schema.json",
-  "x-versao-contrato": "1.5.0"
+  "x-versao-contrato": "1.5.4"
 }

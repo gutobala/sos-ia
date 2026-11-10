@@ -5,9 +5,9 @@ Textos em português, UTF-8. O SOS (proxy entrevistaApi.asp) nunca envia o nome 
 from enum import Enum
 from typing import Annotated, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-VERSAO_CONTRATO = "1.5.0"
+VERSAO_CONTRATO = "1.5.4"
 # 1.1.0 (05/11/2026, aditiva): decisão do usuário sobre a regra documentada — POST /entrevistas/{id}/regra, campo
 #        `decisao_regra` no estado e no contrato, `regra_documentada` no contrato, slot pseudo "decisao_regra" em `faltando`.
 # 1.2.0 (05/11/2026, aditiva): confirmação do Escopo do Pedido — POST /entrevistas/{id}/confirmacao (um chamado por tipo, no
@@ -33,6 +33,17 @@ VERSAO_CONTRATO = "1.5.0"
 #        e preenche onde_ocorre/funcionalidade); `EstadoEntrevista.documentos` + GET /documentacao (casos de uso achados pelo
 #        RAG, para ler no SOS); `EscopoEditado.documentos_lidos`. As caixas de funcionalidades saem da tela do usuário:
 #        `candidatos_funcionalidade` / `candidatos_confirmados` ficam no contrato para a Sustentação.
+# 1.5.1 (09/11/2026, aditiva; pedido docs/sosia-1.5.1-pontos-de-partida.md): `NovaEntrevista.pontos_partida` (até 5; o
+#        `ponto_partida` da 1.5.0 vale como lista de 1): uma busca por ponto, `Documento.ponto`, `Segmento.ponto`, `Pergunta.ponto`;
+#        "o que muda" perguntado por ponto, com opções do tipo de mudança montadas pela aplicação (`Pergunta.opcoes` até 7).
+# 1.5.2 (10/11/2026, aditiva; teste do SOS): caminhos de pontos diferentes não se juntam mais na pergunta da IA ("A > B" vira
+#        "A; B"); página de regras de negócio: na lista, título com a regra que casou e depois dos UC/US do ponto; no
+#        GET /documentacao, só essa regra (+ mãe e sub-regras), com `Documentacao.parcial` e `secoes_total`.
+# 1.5.3 (10/11/2026, sem mudança de esquema): "o que fica fora do escopo" e "outros sistemas" saem dos roteiros evolutivos e o
+#        gatilho de integração não é mais perguntado: a Sustentação responde. O sistema citado vira dúvida no contrato
+#        ("Para a Sustentação: …"); `fora_escopo` e `integracoes` do contrato vêm vazios (campos mantidos).
+# 1.5.4 (10/11/2026, aditiva): `SecaoDocumentacao.html` — o texto da wiki pronto para mostrar (tabelas, listas, riscado), HTML
+#        seguro gerado pelo sos-ia (`doc_html.para_html`). `texto` continua igual.
 
 
 class Base(BaseModel):
@@ -116,7 +127,21 @@ class NovaEntrevista(Base):
     intencao: Intencao
     relato: str = Field(min_length=10, max_length=20000, description="relato livre do usuário")
     imagens: list[Imagem] = Field(default_factory=list, max_length=5)
-    ponto_partida: Optional[PontoPartida] = Field(default=None, description="1.5.0: com ele, não ponha mais 'Menu: …' no relato")
+    ponto_partida: Optional[PontoPartida] = Field(default=None, description="1.5.0: com ele, não ponha mais 'Menu: …' no relato. "
+                                                                            "1.5.1: prefira pontos_partida; este vale como lista de 1")
+    pontos_partida: list[PontoPartida] = Field(default_factory=list, max_length=5,
+                                               description="1.5.1: as telas por onde o usuário entra (até 5, na ordem em que ele "
+                                                           "escolheu); uma busca por ponto. Não mande junto com ponto_partida")
+
+    @model_validator(mode="after")
+    def _um_formato_de_ponto(self):
+        if self.ponto_partida and self.pontos_partida:
+            raise ValueError("mande ponto_partida (1.5.0) ou pontos_partida (1.5.1), não os dois")
+        return self
+
+    def pontos(self) -> list[PontoPartida]:
+        """Os pontos de partida como lista (o ponto_partida antigo vira lista de 1)."""
+        return list(self.pontos_partida) or ([self.ponto_partida] if self.ponto_partida else [])
 
 
 class Slot(Base):
@@ -132,6 +157,9 @@ class Segmento(Base):
     tipo: TipoSegmento
     resumo: str
     slots: list[Slot]
+    ponto: Optional[int] = Field(default=None, ge=1, description="1.5.1: número do ponto de partida (1 = o primeiro de "
+                                                                  "pontos_partida) a que o segmento se refere; nulo com 0 ou 1 ponto, "
+                                                                  "ou quando o segmento vale para todos")
 
 
 class Origem(str, Enum):
@@ -149,19 +177,28 @@ class Documento(Base):
     tipo: str = Field(description="caso_de_uso, user_story ou regras_de_negocio")
     secao: Optional[str] = Field(default=None, description="seção da página que mais se parece com o pedido")
     similaridade: float
+    ponto: Optional[int] = Field(default=None, ge=1, description="1.5.1: número do ponto de partida cuja busca trouxe a página "
+                                                                  "(1 = o primeiro); nulo sem ponto de partida")
 
 
 class SecaoDocumentacao(Base):
     secao: str
     texto: str
+    html: str = Field(default="", description="1.5.4: o texto pronto para mostrar (tabelas, listas, riscado, referências), HTML "
+                                              "seguro gerado pelo sos-ia: todo o texto da wiki vem escapado; só tags p, br, table, "
+                                              "thead, tbody, tr, th, td, ul, ol, li, del, strong, span e div, com classes sosia-*")
 
 
 class Documentacao(Base):
-    """Saída de GET /documentacao: a página inteira, seção por seção, na ordem da wiki (sem as seções revogadas)."""
+    """Saída de GET /documentacao: a página inteira, seção por seção, na ordem da wiki (sem as seções revogadas). 1.5.2: na página
+    de regras de negócio, só as regras que a busca trouxe nesta entrevista (com a regra-mãe e as sub-regras)."""
     pagina: str
     titulo: str
     tipo: str
     secoes: list[SecaoDocumentacao]
+    parcial: bool = Field(default=False, description="1.5.2: true = só parte das seções (a regra que casou); a página tem "
+                                                     "secoes_total seções")
+    secoes_total: Optional[int] = Field(default=None, description="1.5.2: quantas seções a página tem (sem as revogadas)")
 
 
 class CandidatoFuncionalidade(Base):
@@ -202,9 +239,12 @@ class Pergunta(Base):
     slot: str = Field(description="código do slot que a resposta preenche ('gatilho' quando é pergunta de complexidade oculta)")
     texto: str
     dica: Optional[str] = None
-    opcoes: list[str] = Field(default_factory=list, max_length=5,
+    opcoes: list[str] = Field(default_factory=list, max_length=7,
                               description="respostas rápidas (botões); o texto livre continua valendo e a opção escolhida vai em "
-                                          "Resposta.texto. \"Não sei informar\" só vem nos itens que aceitam essa resposta")
+                                          "Resposta.texto. \"Não sei informar\" vem nos itens que aceitam essa resposta e, na "
+                                          "1.5.1, na pergunta \"o que muda\" de um ponto de partida (até 6 tipos de mudança + ele)")
+    ponto: Optional[int] = Field(default=None, ge=1, description="1.5.1: número do ponto de partida a que a pergunta se refere "
+                                                                  "(com 2 ou mais pontos); nulo nas demais")
 
 
 class EstadoEntrevista(Base):
@@ -217,9 +257,10 @@ class EstadoEntrevista(Base):
                                                          "depois das 2 rodadas (roteiro fixo, sem IA)")
     segmentos: list[Segmento]
     candidatos_funcionalidade: list[CandidatoFuncionalidade] = Field(default_factory=list)
-    documentos: list[Documento] = Field(default_factory=list, max_length=5,
+    documentos: list[Documento] = Field(default_factory=list, max_length=25,
                                         description="1.5.0: casos de uso, user stories e regras achados pelo RAG (até 5, uma vez por "
-                                                    "página, sem os revogados); vazia quando o sistema não tem wiki")
+                                                    "página, sem os revogados); vazia quando o sistema não tem wiki. 1.5.1: até 5 por "
+                                                    "ponto de partida, agrupados pelo `ponto`, sem repetir página")
     regra_documentada: Optional[RegraDocumentada] = None
     decisao_regra: Optional[DecisaoRegra] = Field(default=None, description="null com regra_documentada presente = o SOS deve "
                                                   "perguntar ao usuário e chamar POST /entrevistas/{id}/regra")

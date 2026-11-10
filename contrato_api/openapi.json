@@ -1181,7 +1181,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.5.0"
+            "default": "1.5.4"
           },
           "situacao": {
             "type": "string",
@@ -1226,7 +1226,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.5.0"
+            "default": "1.5.4"
           },
           "titulo": {
             "type": "string",
@@ -1394,6 +1394,24 @@
             },
             "type": "array",
             "title": "Secoes"
+          },
+          "parcial": {
+            "type": "boolean",
+            "title": "Parcial",
+            "description": "1.5.2: true = só parte das seções (a regra que casou); a página tem secoes_total seções",
+            "default": false
+          },
+          "secoes_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secoes Total",
+            "description": "1.5.2: quantas seções a página tem (sem as revogadas)"
           }
         },
         "additionalProperties": false,
@@ -1405,7 +1423,7 @@
           "secoes"
         ],
         "title": "Documentacao",
-        "description": "Saída de GET /documentacao: a página inteira, seção por seção, na ordem da wiki (sem as seções revogadas)."
+        "description": "Saída de GET /documentacao: a página inteira, seção por seção, na ordem da wiki (sem as seções revogadas). 1.5.2: na página\nde regras de negócio, só as regras que a busca trouxe nesta entrevista (com a regra-mãe e as sub-regras)."
       },
       "Documento": {
         "properties": {
@@ -1438,6 +1456,19 @@
           "similaridade": {
             "type": "number",
             "title": "Similaridade"
+          },
+          "ponto": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ponto",
+            "description": "1.5.1: número do ponto de partida cuja busca trouxe a página (1 = o primeiro); nulo sem ponto de partida"
           }
         },
         "additionalProperties": false,
@@ -1572,7 +1603,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.5.0"
+            "default": "1.5.4"
           },
           "situacao": {
             "type": "string",
@@ -1731,7 +1762,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.5.0"
+            "default": "1.5.4"
           },
           "rodada": {
             "type": "integer",
@@ -1770,9 +1801,9 @@
               "$ref": "#/components/schemas/Documento"
             },
             "type": "array",
-            "maxItems": 5,
+            "maxItems": 25,
             "title": "Documentos",
-            "description": "1.5.0: casos de uso, user stories e regras achados pelo RAG (até 5, uma vez por página, sem os revogados); vazia quando o sistema não tem wiki"
+            "description": "1.5.0: casos de uso, user stories e regras achados pelo RAG (até 5, uma vez por página, sem os revogados); vazia quando o sistema não tem wiki. 1.5.1: até 5 por ponto de partida, agrupados pelo `ponto`, sem repetir página"
           },
           "regra_documentada": {
             "anyOf": [
@@ -2110,7 +2141,16 @@
                 "type": "null"
               }
             ],
-            "description": "1.5.0: com ele, não ponha mais 'Menu: …' no relato"
+            "description": "1.5.0: com ele, não ponha mais 'Menu: …' no relato. 1.5.1: prefira pontos_partida; este vale como lista de 1"
+          },
+          "pontos_partida": {
+            "items": {
+              "$ref": "#/components/schemas/PontoPartida"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Pontos Partida",
+            "description": "1.5.1: as telas por onde o usuário entra (até 5, na ordem em que ele escolheu); uma busca por ponto. Não mande junto com ponto_partida"
           }
         },
         "additionalProperties": false,
@@ -2168,9 +2208,22 @@
               "type": "string"
             },
             "type": "array",
-            "maxItems": 5,
+            "maxItems": 7,
             "title": "Opcoes",
-            "description": "respostas rápidas (botões); o texto livre continua valendo e a opção escolhida vai em Resposta.texto. \"Não sei informar\" só vem nos itens que aceitam essa resposta"
+            "description": "respostas rápidas (botões); o texto livre continua valendo e a opção escolhida vai em Resposta.texto. \"Não sei informar\" vem nos itens que aceitam essa resposta e, na 1.5.1, na pergunta \"o que muda\" de um ponto de partida (até 6 tipos de mudança + ele)"
+          },
+          "ponto": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ponto",
+            "description": "1.5.1: número do ponto de partida a que a pergunta se refere (com 2 ou mais pontos); nulo nas demais"
           }
         },
         "additionalProperties": false,
@@ -2453,7 +2506,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.5.0"
+            "default": "1.5.4"
           },
           "mock": {
             "type": "boolean",
@@ -2504,6 +2557,12 @@
           "texto": {
             "type": "string",
             "title": "Texto"
+          },
+          "html": {
+            "type": "string",
+            "title": "Html",
+            "description": "1.5.4: o texto pronto para mostrar (tabelas, listas, riscado, referências), HTML seguro gerado pelo sos-ia: todo o texto da wiki vem escapado; só tags p, br, table, thead, tbody, tr, th, td, ul, ol, li, del, strong, span e div, com classes sosia-*",
+            "default": ""
           }
         },
         "additionalProperties": false,
@@ -2534,6 +2593,19 @@
             },
             "type": "array",
             "title": "Slots"
+          },
+          "ponto": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ponto",
+            "description": "1.5.1: número do ponto de partida (1 = o primeiro de pontos_partida) a que o segmento se refere; nulo com 0 ou 1 ponto, ou quando o segmento vale para todos"
           }
         },
         "additionalProperties": false,

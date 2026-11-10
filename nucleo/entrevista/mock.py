@@ -17,10 +17,10 @@ import datetime
 import re
 import uuid
 
-from . import confirmacao as cf, roteiros
+from . import confirmacao as cf, doc_html, roteiros
 from .modelos import (CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra, DecisaoRegraDocumentada,
                       Documentacao, Documento, EntrevistaPendente, EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista,
-                      Integracao, Intencao, MenuItem, Menus, NovaEntrevista, Origem, Pergunta, RegraDocumentada, RequisitoContrato,
+                      Intencao, MenuItem, Menus, NovaEntrevista, Origem, Pergunta, RegraDocumentada, RequisitoContrato,
                       Respostas, SecaoDocumentacao, Segmento, TipoRequisito, TipoSegmento, VersaoEscopo, VinculoChamados)
 
 
@@ -30,7 +30,27 @@ def _agora():
 MAX_RODADAS = 2
 MAX_PERGUNTAS = 5
 RX_MISTO = re.compile(r"\b(tamb[eé]m|al[eé]m disso|aproveitando)\b", re.I)
-RX_GATILHO = re.compile(r"\b(benner|(?-i:SEI)|banco|receita|arquivo|planilha|e-?mail)\b", re.I)
+RX_GATILHO = re.compile(r"\b(arquivo|planilha|e-?mail)\b", re.I)
+RX_INTEGRACAO = re.compile(r"\b(benner|(?-i:SEI)|banco|receita)\b", re.I)    # 1.5.3: não pergunta; vira dúvida para a Sustentação
+# 1.5.4: no formato real da wiki (passos, referências soltas, riscado, tabela), para o SOS estilizar o `html`.
+TEXTO_DOC_EXEMPLO = """BREVE DESCRIÇÃO: Texto de exemplo da documentação (mock).
+
+P1. O sistema apresenta os parâmetros para cadastro;
+Tela01
+
+P2. O ator fornece o código da alienação;
+P3. O sistema recupera e apresenta os demais dados da alienação;
+RN01,
+~~RN149~~,
+FE01
+P4. O caso de uso é encerrado.
+
+---
+Voltar"""
+TABELA_DOC_EXEMPLO = """| Nome | Tipo | Descrição | Ob. |
+| --- | --- | --- | --- |
+| Código da alienação | Numérico | Código <obrigatório> da alienação | SIM |
+| Data do edital | Data | Data de publicação | NÃO |"""
 RX_REGRA = re.compile(r"n[aã]o (permite|deixa)|bloque", re.I)
 RX_CALCULO = re.compile(r"c[aá]lcul", re.I)
 SLOT_PRINCIPAL = {TipoSegmento.CORRETIVO: "o_que_aconteceu", TipoSegmento.EVOLUTIVO_EXISTENTE: "o_que_muda",
@@ -43,12 +63,17 @@ MENU_EXEMPLO = [("m1", None, "Cadastro", False, "Cadastro"),
                 ("m21", "m2", "Extrato da Alienação", True, "Relatório > Extrato da Alienação")]
 
 
-def _documentos_exemplo(sigla):
+def _documentos_exemplo(sigla, n_pontos=0):
+    """2 documentos fixos; 1.5.1: com 2+ pontos, o 2º vem do ponto 2 (e mais um UC de exemplo por ponto a partir do 3º)."""
     s = sigla.lower()
-    return [Documento(pagina=f"sistemas:{s}:documentacao_tecnica:caso_de_uso:uc001:inicio", titulo="UC001 - Cadastrar Alienação (exemplo)",
-                      tipo="caso_de_uso", secao="FLUXO PRINCIPAL", similaridade=0.81),
+    p1, p2 = (1, 2) if n_pontos > 1 else (1, 1) if n_pontos else (None, None)
+    docs = [Documento(pagina=f"sistemas:{s}:documentacao_tecnica:caso_de_uso:uc001:inicio", titulo="UC001 - Cadastrar Alienação (exemplo)",
+                      tipo="caso_de_uso", secao="FLUXO PRINCIPAL", similaridade=0.81, ponto=p1),
             Documento(pagina=f"sistemas:{s}:documentacao_tecnica:regras_de_negocio:inicio", titulo="Regras de Negócio (exemplo)",
-                      tipo="regras_de_negocio", secao="RN010", similaridade=0.77)]
+                      tipo="regras_de_negocio", secao="RN010", similaridade=0.77, ponto=p2)]
+    docs += [Documento(pagina=f"sistemas:{s}:documentacao_tecnica:caso_de_uso:uc00{k}:inicio", titulo=f"UC00{k} - Caso de uso do ponto {k} (exemplo)",
+                       tipo="caso_de_uso", secao="FLUXO PRINCIPAL", similaridade=0.7, ponto=k) for k in range(3, n_pontos + 1)]
+    return docs
 
 
 class MotorMock:
@@ -64,30 +89,44 @@ class MotorMock:
         if RX_MISTO.search(req.relato):
             tipos.append(TipoSegmento.EVOLUTIVO_EXISTENTE if tipos[0] != TipoSegmento.EVOLUTIVO_EXISTENTE
                          else TipoSegmento.EVOLUTIVO_NOVO)
-        segs, p = [], req.ponto_partida
+        segs, ps = [], req.pontos()
         for n, t in enumerate(tipos, 1):
             valores = {SLOT_PRINCIPAL[t]: req.relato.strip()[:500]} if n == 1 else {}
-            if n == 1 and p and roteiros.slot_do_ponto(t):
-                valores[roteiros.slot_do_ponto(t)] = roteiros.valor_do_ponto(p.caminho, p.fonte.value, p.detalhe)
+            if n == 1 and len(ps) > 1 and roteiros.slot_por_ponto(t):
+                valores = {}                                  # 1.5.1: o que muda é perguntado por ponto
+            if n == 1 and ps and roteiros.slot_do_ponto(t):
+                valores[roteiros.slot_do_ponto(t)] = roteiros.valor_dos_pontos(
+                    [roteiros.valor_do_ponto(p.caminho, p.fonte.value, p.detalhe) for p in ps])
             segs.append(Segmento(n=n, tipo=t, resumo=(req.relato.strip()[:120] if n == 1 else "Segunda parte do pedido (mock)"),
                                  slots=roteiros.slots_vazios(t, valores)))
         return segs
 
     def _perguntas(self, st):
         ps = []
-        evolutivo = any(x.codigo == "outros_sistemas" for s in st["segs"] for x in s.slots)   # o item já pergunta sobre isso
-        if st["rodada"] == 1 and not evolutivo and RX_GATILHO.search(roteiros.sem_nao_sei(st["req"].relato)):
+        if st["rodada"] == 1 and RX_GATILHO.search(roteiros.sem_nao_sei(st["req"].relato)):
             ps.append(Pergunta(id=f"r1g", segmento=1, slot="gatilho",
-                               texto="Você citou outro sistema ou arquivo. Os dados serão só consultados, ou também gravados/enviados?",
+                               texto="Você citou um arquivo. O sistema vai gerar, enviar ou ler esse arquivo?",
                                dica="Isso costuma mudar bastante o tamanho do trabalho.",
-                               opcoes=["Só consultados", "Também gravados ou enviados"]))
+                               opcoes=["Gerar", "Enviar", "Ler"]))
+        pontos = st["req"].pontos()
         for s in st["segs"]:
             for x in s.slots:
-                if not x.preenchido and len(ps) < MAX_PERGUNTAS:
-                    texto, dica = roteiros.pergunta_fixa(s.tipo, x.codigo, x.valor)
-                    ps.append(Pergunta(id=f"r{st['rodada']}s{s.n}{x.codigo}", segmento=s.n, slot=x.codigo, texto=texto, dica=dica,
-                                       opcoes=roteiros.opcoes_fixas(x.codigo)))
-        return ps
+                if x.preenchido or len(ps) >= MAX_PERGUNTAS:
+                    continue
+                if pontos and x.codigo == roteiros.slot_por_ponto(s.tipo):     # 1.5.1: "o que muda" por ponto, com os tipos
+                    if not roteiros.conteudo(x.valor):
+                        varios = len(pontos) > 1
+                        for k, p in enumerate(pontos, 1):
+                            texto, dica = roteiros.pergunta_do_ponto(p.caminho)
+                            ps.append(Pergunta(id=f"r{st['rodada']}s{s.n}{x.codigo}" + (f"p{k}" if varios else ""), segmento=s.n,
+                                               slot=x.codigo, texto=texto, dica=dica, ponto=k if varios else None,
+                                               opcoes=roteiros.opcoes_do_ponto()))
+                        continue
+                texto, dica = roteiros.pergunta_fixa(s.tipo, x.codigo, x.valor)
+                ps.append(Pergunta(id=f"r{st['rodada']}s{s.n}{x.codigo}", segmento=s.n, slot=x.codigo, texto=texto, dica=dica,
+                                   opcoes=roteiros.opcoes_do_ponto() if pontos and x.codigo == roteiros.slot_por_ponto(s.tipo)
+                                   else roteiros.opcoes_fixas(x.codigo)))
+        return ps[:MAX_PERGUNTAS]
 
     def _nota(self, segs):
         return round(100 * roteiros.fracao_preenchida(segs))
@@ -114,7 +153,7 @@ class MotorMock:
         dicas = [f"Falta: {f.rotulo}" for f in roteiros.faltando(st["segs"])][:3]
         req = st["req"]
         return EstadoEntrevista(id=eid, rodada=min(st["rodada"], 3), pronto=pronto, segmentos=st["segs"],
-                                candidatos_funcionalidade=self._candidatos(req), documentos=_documentos_exemplo(req.sigla),
+                                candidatos_funcionalidade=self._candidatos(req), documentos=_documentos_exemplo(req.sigla, len(req.pontos())),
                                 regra_documentada=self._regra(req), decisao_regra=st.get("decisao"),
                                 perguntas=st["perguntas"], complemento=st["complemento"],
                                 nota=self._nota(st["segs"]), dicas_medidor=dicas, analise_ia=self.analise_ia)
@@ -156,7 +195,7 @@ class MotorMock:
     def obter(self, eid) -> EstadoEntrevista:
         st = self.estado[eid]
         return EstadoEntrevista(id=eid, rodada=min(st["rodada"], 3), pronto=not st["perguntas"], segmentos=st["segs"],
-                                candidatos_funcionalidade=self._candidatos(st["req"]), documentos=_documentos_exemplo(st["req"].sigla),
+                                candidatos_funcionalidade=self._candidatos(st["req"]), documentos=_documentos_exemplo(st["req"].sigla, len(st["req"].pontos())),
                                 regra_documentada=self._regra(st["req"]), decisao_regra=st.get("decisao"),
                                 perguntas=st["perguntas"], complemento=bool(st.get("complemento") and st["perguntas"]),
                                 nota=self._nota(st["segs"]), dicas_medidor=[], analise_ia=self.analise_ia)
@@ -175,6 +214,10 @@ class MotorMock:
                 continue
             seg = next(s for s in st["segs"] if s.n == p.segmento)
             valor = roteiros.NAO_INFORMADO if roteiros.e_nao_sei(r.texto) and roteiros.aceita_nao_sei(p.slot) else r.texto
+            pontos = st["req"].pontos()
+            if p.ponto and len(pontos) > 1:                   # 1.5.1: resposta de um ponto, marcada com o caminho dele
+                atual = next((x.valor for x in seg.slots if x.codigo == p.slot), None)
+                valor = roteiros.resposta_no_slot(p.slot, atual, roteiros.marca_ponto(pontos[p.ponto - 1].caminho) + r.texto)
             slots = [x.model_copy(update={"valor": valor}) if x.codigo == p.slot else x for x in seg.slots]
             st["segs"] = [roteiros.revalida(seg.model_copy(update={"slots": slots})) if s.n == seg.n else s for s in st["segs"]]
         st["rodada"] = min(st["rodada"] + 1, MAX_RODADAS + 1)   # fica em 3 durante o complemento
@@ -196,18 +239,12 @@ class MotorMock:
                 n=len(reqs) + 1, tipo=TipoRequisito.CORRETIVO if s1.tipo == TipoSegmento.CORRETIVO else TipoRequisito.EVOLUTIVO,
                 segmento=s1.n, descricao="O sistema deve guardar o histórico dos valores calculados (exemplo de hipótese do mock).",
                 criterio_aceite=roteiros.CRITERIO_INDEFINIDO, origem=Origem.INFERIDO))
-        fora = [x.valor for s in segs for x in s.slots if x.codigo == "fora_de_escopo" and x.valor and not roteiros.nao_informado(x.valor)
-                and x.valor.strip().lower() not in ("nada", "não", "nao")]
-        integ = []
-        for s in segs:
-            v = next((x.valor for x in s.slots if x.codigo == "outros_sistemas"), None)
-            if v and not roteiros.nao_informado(v) and v.strip().lower() not in ("não", "nao", "n"):
-                integ.append(Integracao(sistema="(a identificar)", sentido="AMBOS", descricao=v))
         regra = self._regra(req)
         falt = roteiros.faltando_com_regra(segs, regra is not None, st.get("decisao"))
+        integ = roteiros.duvida_integracao(m.group(0) for m in RX_INTEGRACAO.finditer(roteiros.sem_nao_sei(req.relato)))
         k = Contrato(id=eid, titulo=f"{req.sigla} - {req.relato.strip()[:80]}", objetivo=req.relato.strip()[:300],
-                     requisitos=reqs, fora_escopo=fora, integracoes=integ,
-                     duvidas=[f"Gatilho: {g}" for g in st["gatilhos"]] + roteiros.duvidas_nao_informado(segs),
+                     requisitos=reqs, fora_escopo=[], integracoes=[],                # 1.5.3: a Sustentação responde
+                     duvidas=[f"Gatilho: {g}" for g in st["gatilhos"]] + roteiros.duvidas_nao_informado(segs) + ([integ] if integ else []),
                      segmentos=segs, regra_documentada=regra, decisao_regra=st.get("decisao"), nota=self._nota(segs),
                      faltando=falt, pode_confirmar=not falt, analise_ia=self.analise_ia)
         st["contrato"] = k
@@ -224,15 +261,16 @@ class MotorMock:
             raise cf.ConfirmacaoInvalida("o Escopo do Pedido ainda não foi gerado: chame POST /entrevistas/{id}/contrato antes")
         cf.verifica_confirmavel(k)
         funcs = cf.funcionalidades_confirmadas(escopo, self._candidatos(st["req"]))
-        lidos = cf.documentos_lidos(escopo, _documentos_exemplo(st["req"].sigla))
-        grupos = cf.monta_grupos(k, escopo, funcs)
+        lidos = cf.documentos_lidos(escopo, _documentos_exemplo(st["req"].sigla, len(st["req"].pontos())))
+        pts = [p.model_dump(mode="json") for p in st["req"].pontos()]
+        grupos = cf.monta_grupos(k, escopo, funcs, n_pontos=len(pts))
         agora = _agora()
         st["versoes"][0] = dict(origem=0, cd_usuario=None, criado_em=agora, conteudo=k.model_dump(mode="json"))
         st["versoes"][1] = dict(origem=1, cd_usuario=escopo.cd_usuario, criado_em=agora,
                                 conteudo=dict(escopo=escopo.model_dump(mode="json"), grupos=[g.model_dump(mode="json") for g in grupos],
                                               candidatos_confirmados=[dict(id=f.id, nome=f.nome, tipo_ifpug=f.tipo_ifpug) for f in funcs],
                                               documentos_lidos=lidos,
-                                              ponto_partida=st["req"].ponto_partida.model_dump(mode="json") if st["req"].ponto_partida else None))
+                                              ponto_partida=pts[0] if pts else None, pontos_partida=pts))
         st["inferidos"] = cf.inferidos(k, escopo)
         st["situacao"], st["atualizado"] = "PENDENTE", agora
         return EscopoConfirmado(id=eid, situacao="PENDENTE", grupos=grupos, analise_ia=k.analise_ia, nota=k.nota, funcionalidades=funcs,
@@ -270,13 +308,12 @@ class MotorMock:
 
     def documentacao(self, pagina, eid) -> Documentacao:
         st = self.estado[eid]
-        doc = next((d for d in _documentos_exemplo(st["req"].sigla) if d.pagina == pagina), None)
+        doc = next((d for d in _documentos_exemplo(st["req"].sigla, len(st["req"].pontos())) if d.pagina == pagina), None)
         if doc is None:
             raise KeyError(pagina)
         return Documentacao(pagina=doc.pagina, titulo=doc.titulo, tipo=doc.tipo, secoes=[
-            SecaoDocumentacao(secao=doc.secao, texto="Texto de exemplo da documentação (mock). O ator aciona o menu e o sistema "
-                                                     "apresenta a tela."),
-            SecaoDocumentacao(secao="Observações", texto="Segunda seção de exemplo.")])
+            SecaoDocumentacao(secao=s, texto=t, html=doc_html.para_html(t)) for s, t in ((doc.secao, TEXTO_DOC_EXEMPLO),
+                                                                                        ("Observações", TABELA_DOC_EXEMPLO))])
 
     def pendentes(self, horas) -> list[EntrevistaPendente]:
         limite = _agora() - datetime.timedelta(hours=horas)

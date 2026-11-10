@@ -95,7 +95,7 @@ def test_pergunta_de_gatilho_so_com_gatilho_detectado(ambiente):
     usa(resp_entrevista(perguntas=[(1, "gatilho", "Só consulta o Benner ou grava?"), (1, "gatilho", "E o arquivo?"),
                                    (1, "gatilho", "Terceira pergunta de gatilho")]))
     e = mot.criar(nova(relato="Erro ao gerar o arquivo de remessa para o Benner desde ontem."))   # 2 gatilhos: integracao, arquivo
-    assert [p.slot for p in e.perguntas].count("gatilho") == 2
+    assert [p.slot for p in e.perguntas].count("gatilho") == 1                    # 1.5.3: integração não se pergunta
 
 
 def test_regra_documentada_so_com_trecho_do_rag_e_no_corretivo(ambiente):
@@ -229,7 +229,8 @@ def test_contrato_faltando_deterministico_e_cache(ambiente):
     e = mot.criar(nova())
     c1 = mot.contrato(e.id)
     assert not c1.pode_confirmar and {x.slot for x in c1.faltando} == {"o_que_aconteceu", "como_reproduzir", "desde_quando_quem"}
-    assert len(c1.requisitos) == 1 and c1.requisitos[0].n == 1 and c1.fora_escopo == ["Relatórios"]
+    assert len(c1.requisitos) == 1 and c1.requisitos[0].n == 1
+    assert c1.fora_escopo == [] and c1.integracoes == []                          # 1.5.3: a Sustentação responde
     c2 = mot.contrato(e.id)                                                        # cache: não chama o LLM de novo
     assert c2.titulo == c1.titulo and len(f.prompts) == 2
 
@@ -377,22 +378,31 @@ def test_gatilhos_com_palavras_curtas_so_com_contexto():
     assert M.detecta_gatilhos("gerar o arquivo de retorno") == ["arquivo"]
 
 
-def test_integracao_nao_repete_o_item_outros_sistemas(ambiente):
-    """1.3.3 (teste com usuário): num evolutivo, o item "outros sistemas" já pergunta sobre integração; o gatilho não repete."""
+def test_outros_sistemas_e_fora_de_escopo_ficam_para_a_sustentacao(ambiente):
+    """1.5.3: o usuário não é perguntado sobre outros sistemas nem sobre o que fica fora (nem pelo item, nem pelo gatilho, em
+    nenhum roteiro); o sistema citado vira dúvida no contrato, para a Sustentação."""
     mot, usa = ambiente
-    usa(resp_entrevista(tipo="EVOLUTIVO_NOVO", slots={"quem_usa": "Todos os funcionários"},
-                        perguntas=[(1, "gatilho", "Vai só consultar o SEI ou também gravar?"),
-                                   (1, "outros_sistemas", "Busca ou grava dados em outro sistema?")]))
-    e = mot.criar(nova(intencao=Intencao.ALGO_NOVO, relato="Preciso de uma pesquisa que consulte os processos do SEI na intranet."))
-    slots = [p.slot for p in e.perguntas]
-    assert "gatilho" not in slots and "outros_sistemas" in slots
+    for intencao, tipo, relato in (
+            (Intencao.ALGO_NOVO, "EVOLUTIVO_NOVO", "Preciso de uma pesquisa que consulte os processos do SEI na intranet."),
+            (Intencao.PAROU_DE_FUNCIONAR, "CORRETIVO", "Erro ao buscar os pagamentos no Benner desde ontem.")):
+        usa(resp_entrevista(tipo=tipo, perguntas=[(1, "gatilho", "Vai só consultar o sistema ou também gravar?"),
+                                                  (1, "outros_sistemas", "Busca ou grava dados em outro sistema?"),
+                                                  (1, "fora_de_escopo", "O que não faz parte do pedido?")]),
+            dict(CONTRATO_LLM, fora_escopo=["Relatórios"], integracoes=[dict(sistema="Benner", sentido="BUSCA", descricao="x")]))
+        e = mot.criar(nova(intencao=intencao, relato=relato))
+        assert not {"gatilho", "outros_sistemas", "fora_de_escopo"} & {p.slot for p in e.perguntas}
+        assert not {"outros_sistemas", "fora_de_escopo"} & {x.codigo for s in e.segmentos for x in s.slots}
+        k = mot.contrato(e.id)
+        assert k.fora_escopo == [] and k.integracoes == []
+        (d,) = [d for d in k.duvidas if d.startswith("Para a Sustentação")]
+        assert ("SEI" if intencao == Intencao.ALGO_NOVO else "Benner") in d
 
 
 def test_item_repetido_cita_a_resposta_e_usa_dica_do_roteiro(ambiente):
     """1.3.3: "HOPE" (curto) no exemplo de algo novo → a pergunta seguinte cita "HOPE" e não fala de contrato/valor."""
     mot, usa = ambiente
     novo = {"quem_usa": "Todos os funcionários", "informacoes_guardadas": "Nome do sistema ou a sigla dele",
-            "o_que_faz": "Mostra o link do sistema que tem o nome digitado", "fora_de_escopo": "nada", "outros_sistemas": "não"}
+            "o_que_faz": "Mostra o link do sistema que tem o nome digitado"}
     usa(resp_entrevista(tipo="EVOLUTIVO_NOVO", slots=novo, perguntas=[(1, "exemplo_concreto", "Pode dar um exemplo de busca?")]),
         resp_entrevista(tipo="EVOLUTIVO_NOVO", slots=novo))                # 2ª rodada: o LLM não repete; entra a pergunta fixa
     e = mot.criar(nova(intencao=Intencao.ALGO_NOVO, relato="Seria bom ter uma pesquisa dos sistemas da intranet."))
@@ -619,3 +629,161 @@ def test_motor_mostra_5_candidatos_e_falha_do_llm_mantem_fusao(monkeypatch):
         c.commit()
     assert [x["id"] for x in out] == [0, 1, 2, 3, 4] and all("texto" not in x for x in out)
     assert [e["tipo"] for e in ev] == ["fallback_candidatos"]
+
+
+# ---------------------------------------------------------------- 1.5.1: vários pontos de partida
+def com_pontos(intencao, caminhos, relato="Quero que o parcelamento aceite 25% de desconto no 2º edital."):
+    from nucleo.entrevista.modelos import PontoPartida
+    return NovaEntrevista(cd_sistema=1, sigla="GAI", intencao=intencao, relato=relato,
+                          pontos_partida=[PontoPartida(caminho=c, fonte="forms", menu_id=f"M.{i}") for i, c in enumerate(caminhos, 1)])
+
+
+def rag_por_ponto(consultas, catalogos):
+    """RAG falso: cada busca devolve uma página própria + uma página comum a todas (para testar a junção sem repetir)."""
+    def f(conn, intencao, sid, wiki, texto, com_catalogo=True):
+        consultas.append(texto)
+        catalogos.append(com_catalogo)
+        n = len(consultas)
+        docs = [dict(pagina=f"sistemas:gai:uc0{n}", titulo=f"UC0{n}", secao="Fluxo", tipo="caso_de_uso", texto=f"uc{n}", cos=0.8),
+                dict(pagina="sistemas:gai:comum", titulo="Comum", secao="Fluxo", tipo="caso_de_uso", texto="comum", cos=0.7)]
+        return docs, ([dict(c) for c in CAND] if com_catalogo else [])
+    return f
+
+
+RELATO_25 = "Quero que o parcelamento aceite 25% de desconto no 2º edital."
+
+
+def test_dois_pontos_duas_buscas_documentos_por_ponto_e_o_que_muda_por_ponto(ambiente, monkeypatch):
+    consultas, catalogos = [], []
+    monkeypatch.setattr(M, "rag", rag_por_ponto(consultas, catalogos))
+    mot, usa = ambiente
+    cam = ["Cadastro > NUGIV > Parcelamento Resíduo", "Relatório > NUGEC > Demonstrativo"]
+    # o LLM não pergunta o que muda (e tenta trocar a funcionalidade): a aplicação pergunta por ponto, com os tipos de mudança
+    f = usa(resp_entrevista(tipo="EVOLUTIVO_EXISTENTE", slots={"funcionalidade": "outra tela"}), resp_entrevista(tipo="EVOLUTIVO_EXISTENTE"))
+    e = mot.criar(com_pontos(Intencao.MUDAR_EXISTENTE, cam))
+    assert consultas == [f"Menu: {cam[0]}.\n{RELATO_25}", f"Menu: {cam[1]}.\n{RELATO_25}"]
+    assert catalogos == [True, False] and e.candidatos_funcionalidade             # candidatos só da 1ª busca
+    assert [(d.pagina, d.ponto) for d in e.documentos] == [("sistemas:gai:uc01", 1), ("sistemas:gai:comum", 1),
+                                                          ("sistemas:gai:uc02", 2)]
+    func = next(x for x in e.segmentos[0].slots if x.codigo == "funcionalidade")
+    assert func.valor == f"Menu: {cam[0]}; Menu: {cam[1]}" and e.segmentos[0].ponto is None
+    pq = [p for p in e.perguntas if p.slot == "o_que_muda"]
+    assert [p.ponto for p in pq] == [1, 2] and pq[0].texto.startswith(f"Em {cam[0]},")
+    assert pq[0].opcoes[:2] == ["Incluir ou cadastrar", "Alterar"] and pq[0].opcoes[-1] == "Não sei informar" and len(pq[0].opcoes) == 7
+    prompt = f.prompts[0][1]
+    assert f'1. "{cam[0]}"' in prompt and f'2. "{cam[1]}"' in prompt and "(ponto 2)" in prompt
+
+    # respostas por ponto: o item guarda de qual tela é; "Alterar" sozinho não basta e "Não sei informar" não conta
+    e2 = mot.responder(e.id, Respostas(respostas=[Resposta(id=pq[0].id, texto="Alterar"),
+                                                  Resposta(id=pq[1].id, texto="Não sei informar")]))
+    muda = next(x for x in e2.segmentos[0].slots if x.codigo == "o_que_muda")
+    assert muda.valor == f"[{cam[0]}] Alterar; [{cam[1]}] Não sei informar" and not muda.preenchido
+    assert "(ponto 1)" in f.prompts[1][1]
+
+
+def test_segmento_por_ponto_e_texto_do_chamado_um_caminho_por_linha(ambiente, monkeypatch):
+    from nucleo.entrevista.modelos import EscopoEditado
+    monkeypatch.setattr(M, "rag", rag_por_ponto([], []))
+    mot, usa = ambiente
+    cam = ["Cadastro > Parcelamento", "Relatório > Demonstrativo"]
+    cheio = dict(o_que_muda="Aceitar desconto de 25% no segundo edital", exemplo_concreto="Edital 2/2026 com 25% de desconto")
+    # um segmento por ponto: cada um recebe só o seu caminho
+    r = resp_entrevista(tipo="EVOLUTIVO_EXISTENTE", slots=cheio, extra_segs=["EVOLUTIVO_EXISTENTE"])
+    r["segmentos"][0]["ponto"], r["segmentos"][1]["ponto"] = 1, 2
+    r["segmentos"][1]["slots"] = [dict(codigo=c, valor=v) for c, v in dict(cheio, o_que_muda="Mostrar o desconto no demonstrativo").items()]
+    usa(r)
+    e = mot.criar(com_pontos(Intencao.MUDAR_EXISTENTE, cam))
+    got = [(s.ponto, next(x.valor for x in s.slots if x.codigo == "funcionalidade")) for s in e.segmentos]
+    assert got == [(1, f"Menu: {cam[0]}"), (2, f"Menu: {cam[1]}")]
+    # ponto inválido (ou um ponto sem segmento): o 1º segmento volta a valer para todos
+    r2 = resp_entrevista(tipo="EVOLUTIVO_EXISTENTE", slots=cheio)
+    r2["segmentos"][0]["ponto"] = 9
+    usa(r2, CONTRATO_LLM)
+    e2 = mot.criar(com_pontos(Intencao.MUDAR_EXISTENTE, cam))
+    assert e2.segmentos[0].ponto is None
+    assert next(x.valor for x in e2.segmentos[0].slots if x.codigo == "funcionalidade") == f"Menu: {cam[0]}; Menu: {cam[1]}"
+    k = mot.contrato(e2.id)
+    conf = mot.confirmacao(e2.id, EscopoEditado(titulo=k.titulo, objetivo=k.objetivo,
+                                                requisitos=[dict(segmento=1, descricao="Aceitar o desconto", n_contrato=1)]))
+    assert f"Funcionalidades que serão alteradas:\n- Menu: {cam[0]}\n- Menu: {cam[1]}" in conf.grupos[0].texto
+    with db.db_app() as c:
+        v1 = c.execute("SELECT conteudo FROM app.entrevista_escopo WHERE entrevista_id = %s AND versao = 1", (e2.id,)).fetchone()
+        ev = c.execute("SELECT conteudo FROM app.entrevista_evento WHERE entrevista_id = %s AND tipo = 'ponto_partida'", (e2.id,)).fetchone()
+    assert [p["caminho"] for p in v1["conteudo"]["pontos_partida"]] == cam and v1["conteudo"]["ponto_partida"]["caminho"] == cam[0]
+    assert ev["conteudo"]["pontos"] == [dict(fonte="forms", menu_id="M.1"), dict(fonte="forms", menu_id="M.2")]
+
+
+def test_ponto_antigo_vale_como_lista_de_um(ambiente, monkeypatch):
+    from pydantic import ValidationError
+    from nucleo.entrevista.modelos import PontoPartida
+    consultas = []
+    monkeypatch.setattr(M, "rag", rag_por_ponto(consultas, []))
+    mot, usa = ambiente
+    usa(resp_entrevista(tipo="EVOLUTIVO_EXISTENTE", slots={"o_que_muda": ""}, perguntas=[(1, "o_que_muda", "O que muda no parcelamento?")]))
+    e = mot.criar(com_ponto(Intencao.MUDAR_EXISTENTE))          # ponto_partida da 1.5.0
+    assert len(consultas) == 1 and e.documentos and all(d.ponto == 1 for d in e.documentos)
+    p = next(p for p in e.perguntas if p.slot == "o_que_muda")
+    assert p.ponto is None and p.texto == "O que muda no parcelamento?"
+    assert p.opcoes[-1] == "Não sei informar" and "Alterar" in p.opcoes      # opções da aplicação, não da IA
+    pp = PontoPartida(caminho="Cadastro > X", fonte="forms")
+    base = dict(cd_sistema=1, sigla="GAI", intencao=Intencao.MUDAR_EXISTENTE, relato="relato longo o bastante")
+    with pytest.raises(ValidationError):
+        NovaEntrevista(**base, ponto_partida=pp, pontos_partida=[pp])
+    with pytest.raises(ValidationError):
+        NovaEntrevista(**base, pontos_partida=[pp] * 6)
+
+
+def test_pergunta_nao_junta_os_caminhos_de_pontos_diferentes(ambiente, monkeypatch):
+    """Teste do SOS (10/11): corretivo com 3 pontos, o LLM juntou os caminhos com " > " como se fossem uma tela só."""
+    from nucleo.entrevista.modelos import PontoPartida
+    monkeypatch.setattr(M, "rag", rag_por_ponto([], []))
+    mot, usa = ambiente
+    cam = ["Venda Direta", "Edital Venda por Licitação > Cadastrar Controle Edital", "Tela de impressao do controle"]
+    junto = " > ".join(cam)
+    f = usa(resp_entrevista(perguntas=[(1, "como_reproduzir", f"Em {junto}, o que você faz até aparecer o erro?")]))
+    e = mot.criar(NovaEntrevista(cd_sistema=666, sigla="GOP", intencao=Intencao.PAROU_DE_FUNCIONAR,
+                                 relato="O desconto sai errado na impressão do controle de operação.",
+                                 pontos_partida=[PontoPartida(caminho=cam[0], fonte="fgca", menu_id="4996"),
+                                                 PontoPartida(caminho=cam[1], fonte="fgca", menu_id="824"),
+                                                 PontoPartida(caminho=cam[2], fonte="livre")]))
+    p = next(p for p in e.perguntas if p.slot == "como_reproduzir")
+    assert p.texto == f"Em {'; '.join(cam)}, o que você faz até aparecer o erro?"
+    assert "nunca junte dois caminhos" in f.prompts[0][1]
+
+
+def test_regras_de_negocio_so_a_regra_que_casou(ambiente, monkeypatch):
+    """Teste do SOS (10/11): a página geral de regras (368 seções no GAI) vinha em 1º e inteira na leitura."""
+    rn = "sistemas:gai:documentacao_tecnica:regras_de_negocio:inicio"
+    sec = "DOCUMENTO DE REGRAS DE NEGÓCIO > 3. REGRAS DO NEGÓCIO > RN02. Cálculo da Correção e do Valor Corrigido"
+    uc = "sistemas:gai:documentacao_tecnica:caso_de_uso:uc021:inicio"
+    docs = [dict(pagina=rn, titulo="gai - regras de negocio", secao=sec, tipo="regras_de_negocio", texto="RN02", cos=0.7),
+            dict(pagina=uc, titulo="UC021", secao="FLUXO", tipo="caso_de_uso", texto="x", cos=0.6)]
+    monkeypatch.setattr(M, "rag", lambda conn, intencao, sid, wiki, texto: ([dict(d) for d in docs], []))
+    mot, usa = ambiente
+    usa(resp_entrevista())
+    e = mot.criar(nova())
+    assert [d.pagina for d in e.documentos] == [uc, rn]                  # UC/US antes da página geral de regras
+    assert e.documentos[1].titulo == "Regras de negócio: RN02. Cálculo da Correção e do Valor Corrigido"
+    pag = mot.documentacao(rn, e.id)
+    assert pag.parcial and pag.secoes_total > 300 and pag.secoes[0].secao == sec and len(pag.secoes) <= M.MAX_SECOES_REGRA
+    assert pag.titulo == e.documentos[1].titulo
+    inteira = mot.documentacao(uc, e.id)                                 # as outras páginas continuam inteiras
+    assert not inteira.parcial and inteira.secoes_total == len(inteira.secoes)
+
+
+def test_secoes_da_regra_com_mae_e_sub_regras():
+    raiz = "DOC > 3. REGRAS"
+    s = [f"{raiz}", f"{raiz} > RN96. Emitir", f"{raiz} > RN96. Emitir > RN99. Cálculo", f"{raiz} > RN96. Emitir > RN99. Cálculo > a",
+         f"{raiz} > RN97. Outra", "DOC"]
+    assert M.secoes_da_regra(s, [s[2]]) == [1, 2, 3]                     # mãe, a que casou e a sub-regra; sem a raiz
+    assert M.secoes_da_regra(s, ["outra seção"]) is None and M.secoes_da_regra(s, [None]) is None
+
+
+def test_sem_llm_com_dois_pontos_pergunta_por_ponto(ambiente, monkeypatch):
+    consultas = []
+    monkeypatch.setattr(M, "rag", rag_por_ponto(consultas, []))
+    mot, usa = ambiente
+    usa(RuntimeError("LLM fora"))
+    e = mot.criar(com_pontos(Intencao.MUDAR_EXISTENTE, ["Cadastro > A", "Cadastro > B", "cadastro > a"]))
+    assert not e.analise_ia and len(consultas) == 3              # menu_id diferente: são 3 pontos
+    assert [(p.slot, p.ponto) for p in e.perguntas][:3] == [("o_que_muda", 1), ("o_que_muda", 2), ("o_que_muda", 3)]

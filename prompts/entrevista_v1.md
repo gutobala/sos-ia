@@ -10,7 +10,7 @@ RODADA DE PERGUNTAS: {{RODADA}} de 2
 RELATO DO USUÁRIO (dados pessoais já retirados; marcas como [PESSOA] e [CPF] são normais):
 {{RELATO}}
 
-PONTO DE PARTIDA (o caminho do menu que o usuário escolheu antes de escrever o relato):
+PONTOS DE PARTIDA (os caminhos do menu que o usuário escolheu antes de escrever o relato, numerados):
 {{PONTO_PARTIDA}}
 
 RESPOSTAS JÁ DADAS (pergunta → resposta; vazio na 1ª rodada):
@@ -45,16 +45,15 @@ EVOLUTIVO_EXISTENTE:
 - funcionalidade → tela, relatório ou rotina que será alterada
 - o_que_muda → o que deve mudar no comportamento atual
 - exemplo_concreto → exemplo com valores ou caso real
-- fora_de_escopo → o que NÃO faz parte do pedido ("nada" é resposta válida)
-- outros_sistemas → se busca ou grava dados de outros sistemas ("não" é resposta válida)
 
 EVOLUTIVO_NOVO:
 - quem_usa → quem vai usar (área, perfil)
 - informacoes_guardadas → que informações vai guardar (campos principais)
 - o_que_faz → o que faz com essas informações
 - exemplo_concreto → exemplo com valores ou caso real
-- fora_de_escopo → o que NÃO faz parte do pedido ("nada" é resposta válida)
-- outros_sistemas → se busca ou grava dados de outros sistemas ("não" é resposta válida)
+
+Não pergunte o que fica fora do pedido nem se os dados vêm de outro sistema ou vão para ele: quem responde isso é a equipe de
+Sustentação, depois.
 
 ## Como preencher os itens
 
@@ -63,6 +62,8 @@ EVOLUTIVO_NOVO:
 2. Se o usuário respondeu à pergunta de um item, coloque a resposta nele, mesmo que curta ("não", "nada", "todos os usuários").
 3. Um item vago ("está errado", "ajustar", "melhorar") NÃO está preenchido: deixe "" e pergunte.
 4. Em cada segmento, liste TODOS os códigos do seu tipo, na ordem acima, mesmo os vazios.
+5. `ponto` do segmento: com 2 ou mais pontos de partida, o número do ponto a que o segmento se refere, se for só um deles;
+   senão (ou com 0 ou 1 ponto), 0.
 
 ## Funcionalidades parecidas encontradas no catálogo do sistema (podem não ter relação com o pedido)
 {{CANDIDATOS}}
@@ -105,6 +106,9 @@ sugerida ao contexto). Se a lista estiver vazia, não faça perguntas de gatilho
 - Com ponto de partida, o "onde" já está respondido: a primeira pergunta é sobre o que acontece (corretivo) ou o que muda
   (evolutivo) naquele caminho, citando-o. Ex.: "Em Cadastro > NUGIV > Parcelamento Resíduo, o que acontece quando você tenta
   salvar?".
+- `ponto` da pergunta: com 2 ou mais pontos de partida, numa pergunta sobre o que muda em UM dos caminhos, o número dele (uma
+  pergunta por caminho, citando-o: "Em Cadastro > Parcelamento, o que deve mudar?"); nas demais, 0. Nessas perguntas por
+  caminho, deixe `opcoes` vazia (o sistema põe os tipos de mudança).
 - Não pergunte o que o usuário já respondeu. Um item com o valor "Não informado (o usuário não soube responder)" já foi
   respondido: não pergunte de novo. Se todos os itens estão preenchidos e não há gatilho pendente, não pergunte nada.
 

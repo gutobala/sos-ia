@@ -142,7 +142,16 @@
         }
       ],
       "default": null,
-      "description": "1.5.0: com ele, não ponha mais 'Menu: …' no relato"
+      "description": "1.5.0: com ele, não ponha mais 'Menu: …' no relato. 1.5.1: prefira pontos_partida; este vale como lista de 1"
+    },
+    "pontos_partida": {
+      "description": "1.5.1: as telas por onde o usuário entra (até 5, na ordem em que ele escolheu); uma busca por ponto. Não mande junto com ponto_partida",
+      "items": {
+        "$ref": "#/$defs/PontoPartida"
+      },
+      "maxItems": 5,
+      "title": "Pontos Partida",
+      "type": "array"
     }
   },
   "required": [
@@ -155,5 +164,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/NovaEntrevista.schema.json",
-  "x-versao-contrato": "1.5.0"
+  "x-versao-contrato": "1.5.4"
 }

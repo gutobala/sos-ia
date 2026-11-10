@@ -21,6 +21,17 @@ def test_anonimiza_preserva_numero_de_processo_e_texto_funcional():
     assert "0070-000451/2012" in t and "Cadastro > Alienação" in t
 
 
+def test_sigla_de_unidade_depois_do_gatilho_nao_e_nome():
+    """Teste do SOS (10/11): "chefe do NUVIS" virava "chefe do [PESSOA]"."""
+    for t in ("O sistema também deve permitir o chefe do NUVIS assinar as vistorias",
+              "Só o gerente da GEFIS aprova.", "o diretor de DICOM pediu"):
+        assert "[PESSOA]" not in pii.anonimizar(t), t
+    for t, cru in (("O chefe do NUVIS, JOÃO SILVA, assina.", "JOÃO"), ("Falei com o chefe João Pereira.", "João"),
+                   ("Pedido do gerente MARIA", "MARIA"), ("chefe da Maria Souza", "Maria")):
+        a = pii.anonimizar(t)
+        assert cru not in a and "[PESSOA]" in a, a
+
+
 def test_modo_local_nao_envia_imagem():
     assert config.MODO_PII == "local"
     texto, imgs, notas = pii.prepara("relato com CPF 123.456.789-09", [{"nome": "print.png", "mime": "image/png", "base64": "AAAA"}])
@@ -103,12 +114,26 @@ def test_slot_com_resposta_trivial_nao_conta():
     from nucleo.entrevista import roteiros
     from nucleo.entrevista.modelos import TipoSegmento as T
     ev = T.EVOLUTIVO_EXISTENTE
-    assert not roteiros.preenchido(ev, "fora_de_escopo", "ok; ok")
-    assert not roteiros.preenchido(ev, "outros_sistemas", "Sim.")
+    assert not roteiros.preenchido(ev, "exemplo_concreto", "ok; ok")
     assert not roteiros.preenchido(ev, "o_que_muda", "ok, ok, não sei, ok")
-    assert roteiros.preenchido(ev, "fora_de_escopo", "Nada.")
-    assert roteiros.preenchido(ev, "outros_sistemas", "Não")
-    assert roteiros.preenchido(ev, "outros_sistemas", "Sim, busca no Benner")
+    assert roteiros.preenchido(ev, "exemplo_concreto", "Contrato 123: valor 10, hoje sai 12")
+
+
+def test_fora_de_escopo_e_outros_sistemas_sairam_do_roteiro():
+    """1.5.3: a Sustentação responde; uma entrevista começada antes perde os dois itens na revalidação e não fica bloqueada."""
+    from nucleo.entrevista import roteiros as R
+    from nucleo.entrevista.modelos import Segmento, Slot, TipoSegmento as T
+    for t in (T.EVOLUTIVO_EXISTENTE, T.EVOLUTIVO_NOVO):
+        assert not {"fora_de_escopo", "outros_sistemas"} & {c for c, _, _ in R.ROTEIROS[t]}
+    cheio = R.slots_vazios(T.EVOLUTIVO_EXISTENTE, dict(funcionalidade="Menu: Cadastro > Parcelamento",
+                                                       o_que_muda="Aceitar 25% de desconto no 2º edital",
+                                                       exemplo_concreto="Edital 2/2026 com 25% de desconto"))
+    antigo = Segmento(n=1, tipo=T.EVOLUTIVO_EXISTENTE, resumo="x", slots=cheio + [
+        Slot(codigo="fora_de_escopo", rotulo="O que fica fora do escopo", obrigatorio=True, valor=None, preenchido=False)])
+    assert R.faltando([antigo]) and not R.faltando([R.revalida(antigo)])
+    assert R.duvida_integracao([]) is None
+    d = R.duvida_integracao(["Benner", "SEI", "benner ", "Benner"])
+    assert d.startswith("Para a Sustentação") and "(Benner, SEI)" in d
 
 
 def test_nao_sei_so_conta_nos_itens_que_aceitam():

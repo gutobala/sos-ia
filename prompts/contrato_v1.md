@@ -28,9 +28,9 @@ REGRA DOCUMENTADA MOSTRADA AO USUÁRIO (se houver):
    - `descricao`: o que deve ser feito, na forma "O sistema deve ..." (corretivo: "O sistema deve ... sem apresentar o erro ...");
    - `criterio_aceite`: como o usuário vai conferir que ficou pronto, de preferência com o exemplo dado por ele (ex.: "Ao salvar o
      contrato 123 com a data 10/05, a mensagem X não aparece e o contrato fica gravado.").
-5. `fora_escopo`: o que o usuário disse que NÃO faz parte (lista vazia se ele disse "nada" ou não disse).
-6. `integracoes`: cada outro sistema citado, com `sentido` BUSCA (só consulta dados dele), GRAVA (envia ou grava dados nele) ou
-   AMBOS, e uma descrição curta. Lista vazia se o usuário disse que não há.
+5. `fora_escopo`: sempre lista vazia (o que fica fora do pedido é definido pela Sustentação).
+6. `integracoes`: sempre lista vazia (a Sustentação confirma os outros sistemas; os citados pelo usuário já entram nas dúvidas
+   automaticamente).
 7. `duvidas`: o que ficou em aberto e a equipe vai precisar confirmar (itens vagos, respostas contraditórias, gatilhos sem resposta
    clara). Lista vazia se nada ficou em aberto. Itens com o valor "Não informado (o usuário não soube responder)" já entram nas
    dúvidas automaticamente: não repita.
