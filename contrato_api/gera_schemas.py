@@ -27,7 +27,9 @@ MODELOS = {
     "EscopoChamado": m.EscopoChamado,         # saída de GET /solicitacoes/{cd}/escopo (1.2.0)
     "EntrevistaPendente": m.EntrevistaPendente,   # item de GET /confirmacoes/pendentes (1.2.0)
     "Menus": m.Menus,                         # saída de GET /sistemas/{cd}/menus (1.5.0)
-    "Documentacao": m.Documentacao,           # saída de GET /documentacao (1.5.0)
+    "Documentacao": m.Documentacao,           # saída de GET /documentacao (1.5.0; 1.6.0 também por sigla)
+    "ArvoreDocumentacao": m.ArvoreDocumentacao,                   # saída de GET /sistemas/{cd}/documentacao (1.6.0)
+    "ResultadoBuscaDocumentacao": m.ResultadoBuscaDocumentacao,   # item de GET /sistemas/{cd}/documentacao/busca (1.6.0)
     "Saude": m.Saude,                         # saída de GET /saude
     "Erro": m.Erro,                           # corpo de qualquer erro (401, 404, 409, 422, 503)
 }

@@ -18,10 +18,12 @@ import re
 import uuid
 
 from . import confirmacao as cf, doc_html, roteiros
-from .modelos import (CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra, DecisaoRegraDocumentada,
-                      Documentacao, Documento, EntrevistaPendente, EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista,
-                      Intencao, MenuItem, Menus, NovaEntrevista, Origem, Pergunta, RegraDocumentada, RequisitoContrato,
-                      Respostas, SecaoDocumentacao, Segmento, TipoRequisito, TipoSegmento, VersaoEscopo, VinculoChamados)
+from .modelos import (ArvoreDocumentacao, CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra,
+                      DecisaoRegraDocumentada, Documentacao, Documento, EntrevistaPendente, EscopoChamado, EscopoConfirmado,
+                      EscopoEditado, EstadoEntrevista, GrupoArvore, Intencao, MenuItem, Menus, NovaEntrevista, Origem, PaginaArvore,
+                      PaginaCitante, Pergunta, ReferenciaSecao, RegraDocumentada, RequisitoContrato, Respostas,
+                      ResultadoBuscaDocumentacao, SecaoDocumentacao, Segmento, TipoRequisito, TipoSegmento, VersaoEscopo,
+                      VinculoChamados)
 
 
 def _agora():
@@ -74,6 +76,42 @@ def _documentos_exemplo(sigla, n_pontos=0):
     docs += [Documento(pagina=f"sistemas:{s}:documentacao_tecnica:caso_de_uso:uc00{k}:inicio", titulo=f"UC00{k} - Caso de uso do ponto {k} (exemplo)",
                        tipo="caso_de_uso", secao="FLUXO PRINCIPAL", similaridade=0.7, ponto=k) for k in range(3, n_pontos + 1)]
     return docs
+
+
+MAX_TRECHO_BUSCA = 900
+SECAO_REGRA_EXEMPLO = "REGRAS DE NEGÓCIO > RN01 - Regra de exemplo"
+
+
+def _paginas_consulta(s):
+    """1.6.0: as 2 páginas da árvore do mock: (id, título) do caso de uso e da história de usuário."""
+    return [(f"sistemas:{s}:documentacao_tecnica:caso_de_uso:uc001:inicio", "UC001 - Cadastrar Alienação (exemplo)"),
+            (f"sistemas:{s}:documentacao_tecnica:user_stories:us001:inicio", "US001 - Consultar Alienação (exemplo)")]
+
+
+def _pagina_consulta(pagina, sigla):
+    """1.6.0: página inteira por sigla. As 2 da árvore trazem o exemplo da 1.5.4 com a RN01 resolvida (link para a página de
+    regras, que também abre aqui) e uma seção revogada."""
+    s = sigla.lower()
+    regras = f"sistemas:{s}:documentacao_tecnica:regras_de_negocio:inicio"
+    if pagina == regras:
+        texto = "O sistema não permite cadastrar a alienação sem o código do edital (texto de exemplo)."
+        return Documentacao(pagina=pagina, titulo="Regras de Negócio (exemplo)", tipo="regras_de_negocio", secoes_total=1,
+                            secoes=[SecaoDocumentacao(secao=SECAO_REGRA_EXEMPLO, texto=texto, html=doc_html.para_html(texto))],
+                            citada_por=[PaginaCitante(pagina=p, titulo=t, tipo=tp) for (p, t), tp in
+                                        zip(_paginas_consulta(s), ("caso_de_uso", "user_story"))])
+    titulos = dict(_paginas_consulta(s))
+    if pagina not in titulos:
+        raise KeyError(pagina)
+    ref = ReferenciaSecao(codigo="RN01", tipo_ref="RN", resolvida=True, pagina=regras, secao=SECAO_REGRA_EXEMPLO)
+    nao = [ReferenciaSecao(codigo=c, tipo_ref=t, resolvida=False) for c, t in (("Tela01", "Tela"), ("FE01", "FE"))]
+    revogado = "~~RN149 - Regra revogada em 2020 (exemplo).~~"
+    secoes = [SecaoDocumentacao(secao="FLUXO PRINCIPAL", texto=TEXTO_DOC_EXEMPLO, referencias=[nao[0], ref, nao[1]],
+                                html=doc_html.para_html(TEXTO_DOC_EXEMPLO, {"RN:1": (regras, SECAO_REGRA_EXEMPLO)})),
+              SecaoDocumentacao(secao="Observações", texto=TABELA_DOC_EXEMPLO, html=doc_html.para_html(TABELA_DOC_EXEMPLO)),
+              SecaoDocumentacao(secao="~~REGRA ANTIGA~~", texto=revogado, revogada=True,
+                                html=f"<del>{doc_html.para_html(revogado)}</del>")]
+    tipo = "caso_de_uso" if ":caso_de_uso:" in pagina else "user_story"
+    return Documentacao(pagina=pagina, titulo=titulos[pagina], tipo=tipo, secoes=secoes, secoes_total=2)
 
 
 class MotorMock:
@@ -306,7 +344,9 @@ class MotorMock:
     def menus(self, cd_sistema, sigla) -> Menus:
         return Menus(fonte="wiki", modulos=[], menus=[MenuItem(id=i, pai=p, nome=n, folha=f, caminho=c) for i, p, n, f, c in MENU_EXEMPLO])
 
-    def documentacao(self, pagina, eid) -> Documentacao:
+    def documentacao(self, pagina, eid=None, sigla=None) -> Documentacao:
+        if sigla is not None:                                  # 1.6.0: consulta fora da entrevista
+            return _pagina_consulta(pagina, sigla)
         st = self.estado[eid]
         doc = next((d for d in _documentos_exemplo(st["req"].sigla, len(st["req"].pontos())) if d.pagina == pagina), None)
         if doc is None:
@@ -314,6 +354,21 @@ class MotorMock:
         return Documentacao(pagina=doc.pagina, titulo=doc.titulo, tipo=doc.tipo, secoes=[
             SecaoDocumentacao(secao=s, texto=t, html=doc_html.para_html(t)) for s, t in ((doc.secao, TEXTO_DOC_EXEMPLO),
                                                                                         ("Observações", TABELA_DOC_EXEMPLO))])
+
+    # ---- consulta da documentação (1.6.0)
+    def arvore_documentacao(self, cd_sistema, sigla) -> ArvoreDocumentacao:
+        s = sigla.lower()
+        uc, us = _paginas_consulta(s)
+        return ArvoreDocumentacao(wiki=s, titulo=sigla.upper(), grupos=[
+            GrupoArvore(tipo="caso_de_uso", titulo="Casos de uso", paginas=[PaginaArvore(pagina=uc[0], titulo=uc[1], secoes=2, revogada=False)]),
+            GrupoArvore(tipo="user_story", titulo="Histórias de usuário", paginas=[PaginaArvore(pagina=us[0], titulo=us[1], secoes=2,
+                                                                                                 revogada=False)])])
+
+    def busca_documentacao(self, cd_sistema, sigla, q, n=10, testes=False) -> list[ResultadoBuscaDocumentacao]:
+        s = sigla.lower()
+        return [ResultadoBuscaDocumentacao(pagina=p, titulo=t, tipo=tipo, secao="FLUXO PRINCIPAL", similaridade=sim,
+                                           trecho_html=doc_html.para_html(TEXTO_DOC_EXEMPLO[:MAX_TRECHO_BUSCA]))
+                for (p, t), tipo, sim in zip(_paginas_consulta(s), ("caso_de_uso", "user_story"), (0.81, 0.74))][:n]
 
     def pendentes(self, horas) -> list[EntrevistaPendente]:
         limite = _agora() - datetime.timedelta(hours=horas)

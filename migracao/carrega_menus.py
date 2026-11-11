@@ -16,36 +16,14 @@ import os
 import sys
 
 from nucleo import config, db
-from nucleo.menus import catalogo, forms, wiki
+from nucleo.menus import catalogo, forms
 
 DADOS = os.path.join(config.RAIZ, "dados")
 
 
-def sistemas(conn):
-    """({chave: (id, sigla)} de apf.sistema, {chave do alias: (id, sigla)})."""
-    canon, alias = {}, {}
-    for r in conn.execute("SELECT id, sigla FROM apf.sistema ORDER BY sigla"):
-        canon[catalogo.chave_sistema(r["sigla"])] = (r["id"], r["sigla"])
-    for r in conn.execute("SELECT a.alias, s.id, s.sigla FROM apf.sistema_alias a JOIN apf.sistema s ON s.id = a.sistema_id"):
-        k = catalogo.chave_sistema(r["alias"])
-        if k not in canon:
-            alias.setdefault(k, (r["id"], r["sigla"]))
-    return canon, alias
-
-
-def trechos_wiki(conn, alias):
-    """Casos de uso e user stories, só a versão mais recente de cada seção, agrupados pela chave da sigla oficial (a wiki do
-    E-SOCIAL está em "esocial", um alias: grava em "e_social", que é a chave que a API calcula pela sigla do SOS)."""
-    rows = conn.execute("""SELECT DISTINCT ON (origem_dokuwiki, secao, ordem) sistema, tipo, secao, texto, origem_dokuwiki
-                           FROM apf.conhecimento_trecho WHERE tipo IN ('caso_de_uso', 'user_story')
-                           ORDER BY origem_dokuwiki, secao, ordem, data_versao DESC""").fetchall()
-    por = collections.defaultdict(list)
-    for r in rows:
-        k = catalogo.chave_sistema(r["sistema"])
-        if k in alias:
-            k = catalogo.chave_sistema(alias[k][1])
-        por[k].append(r)
-    return por
+# a leitura do catálogo e da wiki mora no núcleo (nucleo/menus/catalogo.py): a sincronização da wiki também refaz os menus
+sistemas = catalogo.sistemas
+trechos_wiki = catalogo.trechos_wiki
 
 
 def main():
@@ -71,11 +49,7 @@ def main():
             sys.exit(f"{arq}: nenhum item de menu reconhecido")
         cargas.append((k, "forms", itens, sis.get(k, (None,))[0]))
     if a.wiki:
-        for k, ts in sorted(trechos_wiki(conn, alias).items()):
-            siglas = {k} | {a for a, (_, s) in alias.items() if catalogo.chave_sistema(s) == k}
-            itens = wiki.extrai(ts, k, siglas)
-            if itens:
-                cargas.append((k, "wiki", itens, sis.get(k, (None,))[0]))
+        cargas += catalogo.cargas_wiki(conn)
 
     sql = ["BEGIN;", open(catalogo.ARQ_DDL, encoding="utf-8").read()]
     if a.wiki:

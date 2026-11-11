@@ -35,10 +35,12 @@ from ..menus import catalogo as menus_catalogo
 from ..rag import busca, catalogo
 from . import armazem, confirmacao as cf, doc_html, roteiros
 from .mock import SLOT_PRINCIPAL
-from .modelos import (CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra, DecisaoRegraDocumentada,
-                      Documentacao, Documento, EntrevistaPendente, EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista,
-                      Intencao, Menus, NovaEntrevista, Origem, Pergunta, RegraDocumentada, RequisitoContrato, Respostas,
-                      SecaoDocumentacao, Segmento, TipoRequisito, TipoSegmento, VersaoEscopo, VinculoChamados)
+from .modelos import (ArvoreDocumentacao, CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra,
+                      DecisaoRegraDocumentada, Documentacao, Documento, EntrevistaPendente, EscopoChamado, EscopoConfirmado,
+                      EscopoEditado, EstadoEntrevista, GrupoArvore, Intencao, Menus, NovaEntrevista, Origem, PaginaArvore,
+                      PaginaCitante, Pergunta, ReferenciaSecao, RegraDocumentada, RequisitoContrato, Respostas,
+                      ResultadoBuscaDocumentacao, SecaoDocumentacao, Segmento, TipoRequisito, TipoSegmento, VersaoEscopo,
+                      VinculoChamados)
 
 MAX_RODADAS = 2
 MAX_PERGUNTAS = 5
@@ -227,6 +229,97 @@ def titulo_documento(d):
 
 
 MAX_SECOES_REGRA = 10
+
+# ---------------------------------------------------------------- consulta da documentação (1.6.0)
+GRUPOS_DOC = (("inicio", "Sobre o sistema"), ("caso_de_uso", "Casos de uso"), ("user_story", "Histórias de usuário"),
+              ("regras_de_negocio", "Regras de negócio"), ("mensagens", "Mensagens"), ("glossario", "Glossário"),
+              ("eventos", "Eventos"), ("documento", "Documentos"), ("plano_de_teste", "Planos de teste"), ("indice", "Índices"))
+MAX_CITADA_POR = 50
+MAX_TRECHO_BUSCA = 900
+# seção revogada (a mesma regra de riscado(), em SQL): título riscado ou texto inteiro entre ~~ ~~
+SQL_RISCADO = ("(t.secao LIKE '%%~~%%' OR (length(btrim(t.texto, E' \\n\\t\\r')) > 4 AND btrim(t.texto, E' \\n\\t\\r') LIKE '~~%%' "
+               "AND btrim(t.texto, E' \\n\\t\\r') LIKE '%%~~'))")
+
+
+def chave_natural(t):
+    """Ordem natural ("UC4" antes de "UC35"; "UC0035" é 35), sem caixa."""
+    return [int(x) if x.isdigit() else x.casefold() for x in re.split(r"(\d+)", t or "")]
+
+
+def pagina_da_wiki(conn, pagina, wiki):
+    """A página pertence à wiki do sistema: está em `sistemas:<wiki>:…` ou algum trecho dela é acessível pelo sistema (página
+    em _auxiliares de outro nome, ou regra de outro sistema que este cita: é para onde levam os links das referências)."""
+    if pagina.startswith(f"sistemas:{wiki}:"):
+        return True
+    return conn.execute("SELECT EXISTS (SELECT 1 FROM apf.conhecimento_trecho WHERE origem_dokuwiki = %s AND %s = ANY(sistemas_acesso)) "
+                        "AS ok", (pagina, wiki)).fetchone()["ok"]
+
+
+def arvore_documentacao(conn, wiki):
+    """Grupos de páginas da wiki do sistema (1.6.0): as páginas `sistemas:<wiki>:…` e as que o sistema alcança inteiras
+    (sistemas_acesso em todos os trechos, como as de _auxiliares). Só a versão mais recente de cada página."""
+    rows = conn.execute(
+        f"""WITH p AS (SELECT origem_dokuwiki, max(data_versao) AS v FROM apf.conhecimento_trecho t
+                       GROUP BY origem_dokuwiki
+                       HAVING bool_or(origem_dokuwiki LIKE %(pref)s) OR bool_and(%(w)s = ANY(sistemas_acesso)))
+            SELECT t.origem_dokuwiki AS pagina, max(t.tipo) AS tipo, max(t.titulo_pagina) AS titulo,
+                   count(*) FILTER (WHERE NOT {SQL_RISCADO} AND btrim(t.texto) <> '') AS secoes,
+                   bool_and({SQL_RISCADO}) AS revogada
+            FROM apf.conhecimento_trecho t JOIN p ON p.origem_dokuwiki = t.origem_dokuwiki AND t.data_versao = p.v
+            GROUP BY t.origem_dokuwiki""", dict(pref=f"sistemas:{wiki}:%", w=wiki)).fetchall()
+    inicio = f"sistemas:{wiki}:inicio"
+    por = {}
+    for r in rows:
+        tipo = "inicio" if r["pagina"] == inicio else r["tipo"]
+        por.setdefault(tipo, []).append(PaginaArvore(pagina=r["pagina"], titulo=r["titulo"] or r["pagina"], secoes=r["secoes"],
+                                                     revogada=bool(r["revogada"])))
+    conhecidos = {t for t, _ in GRUPOS_DOC}
+    grupos = [GrupoArvore(tipo=t, titulo=nome, paginas=sorted(por[t], key=lambda p: chave_natural(p.titulo)))
+              for t, nome in GRUPOS_DOC if por.get(t)]
+    grupos += [GrupoArvore(tipo=t, titulo=t.replace("_", " ").capitalize(), paginas=sorted(ps, key=lambda p: chave_natural(p.titulo)))
+               for t, ps in sorted(por.items()) if t not in conhecidos]
+    titulo = next((p.titulo for g in grupos if g.tipo == "inicio" for p in g.paginas), None)
+    return ArvoreDocumentacao(wiki=wiki, titulo=titulo or wiki.upper(), grupos=grupos)
+
+
+def referencias_das_secoes(conn, ids):
+    """{id do trecho: [ReferenciaSecao]} (uma por código, na ordem em que foram gravadas) e {id: {"RN:257": (página, seção)}} das
+    resolvidas, que viram link no html."""
+    lista, mapa = {}, {}
+    if not ids:
+        return lista, mapa
+    for r in conn.execute("""SELECT r.origem_trecho_id AS o, r.tipo_ref, r.chave, r.codigo, r.resolvido, d.origem_dokuwiki AS pagina,
+                                    d.secao FROM apf.conhecimento_referencia r
+                             LEFT JOIN apf.conhecimento_trecho d ON d.id = r.destino_trecho_id
+                             WHERE r.origem_trecho_id = ANY(%s) ORDER BY r.id""", (list(ids),)).fetchall():
+        itens = lista.setdefault(r["o"], [])
+        if any(x.codigo == r["codigo"] for x in itens):
+            continue
+        ok = bool(r["resolvido"] and r["pagina"])
+        itens.append(ReferenciaSecao(codigo=r["codigo"], tipo_ref=r["tipo_ref"], resolvida=ok, pagina=r["pagina"] if ok else None,
+                                     secao=r["secao"] if ok else None))
+        if ok:
+            mapa.setdefault(r["o"], {})[r["chave"]] = (r["pagina"], r["secao"])
+    return lista, mapa
+
+
+def citada_por(conn, pagina):
+    """Páginas que citam alguma seção desta (como busca.expande, até 50), em ordem natural de título."""
+    rows = conn.execute("""SELECT DISTINCT o.origem_dokuwiki AS pagina, o.titulo_pagina AS titulo, o.tipo
+                           FROM apf.conhecimento_referencia c JOIN apf.conhecimento_trecho d ON d.id = c.destino_trecho_id
+                           JOIN apf.conhecimento_trecho o ON o.id = c.origem_trecho_id
+                           WHERE d.origem_dokuwiki = %s AND o.origem_dokuwiki <> %s""", (pagina, pagina)).fetchall()
+    rows = sorted(rows, key=lambda r: chave_natural(r["titulo"]))[:MAX_CITADA_POR]
+    return [PaginaCitante(pagina=r["pagina"], titulo=r["titulo"] or r["pagina"], tipo=r["tipo"]) for r in rows]
+
+
+def secao_documentacao(r, refs, mapa, revogada=False):
+    """Uma seção da resposta: html com os links das referências resolvidas; a revogada vem inteira riscada."""
+    h = doc_html.para_html(r["texto"], mapa.get(r["id"]))
+    if revogada:
+        h = f"<del>{h}</del>"
+    return SecaoDocumentacao(secao=r["secao"] or r["titulo_pagina"], texto=r["texto"] or "", html=h, revogada=revogada,
+                             referencias=refs.get(r["id"], []))
 
 
 def secoes_da_regra(secoes, casadas):
@@ -941,39 +1034,79 @@ class Motor:
         finally:
             conn.close()
 
-    def documentacao(self, pagina, eid) -> Documentacao:
-        """Página da wiki para o usuário ler. Só páginas `sistemas:<wiki do sistema da entrevista>:…`; as demais (e entrevista
-        inexistente) → KeyError (404). Versão mais recente, seções na ordem, sem as revogadas."""
-        app = self.conectar_app()
+    def documentacao(self, pagina, eid=None, sigla=None) -> Documentacao:
+        """Página da wiki para o usuário ler, na versão mais recente, seções na ordem. KeyError (404) se a página não é da wiki do
+        sistema ou não existe.
+          - `eid` (1.5.0): só páginas `sistemas:<wiki do sistema da entrevista>:…`, sem as revogadas; na página de regras, só
+            a regra que casou (1.5.2);
+          - `sigla` (1.6.0): a página inteira, inclusive as revogadas (`revogada`, html riscado); vale também a página que o
+            sistema alcança (pagina_da_wiki), para onde levam os links das referências.
+        Nos dois casos, 1.6.0: referências de cada seção (resolvidas viram link no html) e `citada_por`."""
+        app = self.conectar_app() if sigla is None else None
         conn = self.conectar()
         try:
-            _, est = self._carrega(app, eid)
-            wiki = est.get("wiki", "")
-            if "wiki" not in est:                               # entrevista anterior à 1.5.0
-                wiki = resolve_sistema(conn, est["sigla"])[1]
-            if not wiki or not pagina.startswith(f"sistemas:{wiki}:"):
-                raise KeyError(pagina)
+            est = None
+            if sigla is not None:
+                wiki = resolve_sistema(conn, sigla)[1]
+                if not wiki or not pagina_da_wiki(conn, pagina, wiki):
+                    raise KeyError(pagina)
+            else:
+                _, est = self._carrega(app, eid)
+                wiki = est.get("wiki", "")
+                if "wiki" not in est:                               # entrevista anterior à 1.5.0
+                    wiki = resolve_sistema(conn, est["sigla"])[1]
+                if not wiki or not pagina.startswith(f"sistemas:{wiki}:"):
+                    raise KeyError(pagina)
             rows = conn.execute(
-                """SELECT titulo_pagina, tipo, secao, texto FROM apf.conhecimento_trecho
+                """SELECT id, titulo_pagina, tipo, secao, texto FROM apf.conhecimento_trecho
                    WHERE origem_dokuwiki = %(p)s
                      AND data_versao = (SELECT max(data_versao) FROM apf.conhecimento_trecho WHERE origem_dokuwiki = %(p)s)
                    ORDER BY ordem""", dict(p=pagina)).fetchall()
             if not rows:
                 raise KeyError(pagina)
-            validas = [r for r in rows if not riscado(r) and (r["texto"] or "").strip()]
-            secoes = [SecaoDocumentacao(secao=r["secao"] or r["titulo_pagina"], texto=r["texto"] or "",
-                                        html=doc_html.para_html(r["texto"])) for r in validas]
-            titulo, total = rows[0]["titulo_pagina"], len(secoes)
-            if rows[0]["tipo"] == "regras_de_negocio":           # 1.5.2: só a regra que casou, não as ~360 seções da página
+            com_texto = [r for r in rows if (r["texto"] or "").strip()]
+            validas = [r for r in com_texto if not riscado(r)]
+            mostrar = com_texto if sigla is not None else validas
+            refs, mapa = referencias_das_secoes(conn, [r["id"] for r in mostrar])
+            secoes = [secao_documentacao(r, refs, mapa, revogada=riscado(r)) for r in mostrar]
+            titulo, total = rows[0]["titulo_pagina"], len(validas)
+            if est is not None and rows[0]["tipo"] == "regras_de_negocio":   # 1.5.2: só a regra que casou, não as ~360 seções
                 casadas = [d.get("secao") for d in est.get("docs", []) if d["pagina"] == pagina]
                 manter = secoes_da_regra([r["secao"] or "" for r in validas], casadas)
                 if manter is not None:
                     secoes = [secoes[i] for i in manter]
                     titulo = titulo_documento(dict(tipo="regras_de_negocio", secao=next(c for c in casadas if c), titulo=titulo))
             return Documentacao(pagina=pagina, titulo=titulo, tipo=rows[0]["tipo"], secoes=secoes,
-                                parcial=len(secoes) < total, secoes_total=total)
+                                parcial=est is not None and len(secoes) < total, secoes_total=total,
+                                citada_por=citada_por(conn, pagina))
         finally:
-            app.close()
+            if app is not None:
+                app.close()
+            conn.close()
+
+    def arvore_documentacao(self, cd_sistema, sigla) -> ArvoreDocumentacao:
+        """1.6.0: páginas da wiki do sistema, agrupadas por tipo. Sem wiki (ou sigla desconhecida): wiki nula e sem grupos."""
+        conn = self.conectar()
+        try:
+            wiki = resolve_sistema(conn, sigla)[1]
+            return arvore_documentacao(conn, wiki) if wiki else ArvoreDocumentacao()
+        finally:
+            conn.close()
+
+    def busca_documentacao(self, cd_sistema, sigla, q, n=10, testes=False) -> list[ResultadoBuscaDocumentacao]:
+        """1.6.0: a busca híbrida da entrevista (busca.busca) na wiki do sistema, até 2 trechos por página. Sem wiki: []."""
+        conn = self.conectar()
+        try:
+            wiki = resolve_sistema(conn, sigla)[1]
+            if not wiki:
+                return []
+            res = busca.busca(conn, q, wiki, n=n, incluir_teste=testes, expandir=False, max_por_pagina=2)["resultados"]
+            return [ResultadoBuscaDocumentacao(
+                pagina=x["origem_dokuwiki"], tipo=x["tipo"], secao=x["secao"] or None,
+                titulo=titulo_documento(dict(tipo=x["tipo"], secao=x["secao"], titulo=x["titulo_pagina"], pagina=x["origem_dokuwiki"])),
+                trecho_html=doc_html.para_html((x["texto"] or "")[:MAX_TRECHO_BUSCA]),
+                similaridade=round(min(1.0, max(0.0, float(x["cos"] or 0))), 3)) for x in res]
+        finally:
             conn.close()
 
     @staticmethod

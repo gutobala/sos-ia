@@ -69,6 +69,11 @@ services:
       SOSIA_PII_MODO: ${SOSIA_PII_MODO:-local}
       SOSIA_IMAGEM_DETALHE: ${SOSIA_IMAGEM_DETALHE:-high}
       SOSIA_AQUECER_MIN: ${SOSIA_AQUECER_MIN:-30}
+      # sincronização diária da wiki (hora de Brasília; vazio ou 0 desliga) e API XML-RPC da wiki (só leitura)
+      SOSIA_WIKI_SYNC_HORA: ${SOSIA_WIKI_SYNC_HORA:-03:00}
+      SOSIA_WIKI_URL: ${SOSIA_WIKI_URL:-http://terrawiki.terracapnet.local/lib/exe/xmlrpc.php}
+      SOSIA_WIKI_USUARIO: ${SOSIA_WIKI_USUARIO:-}
+      SOSIA_WIKI_SENHA: ${SOSIA_WIKI_SENHA:-}
       SOSIA_MODELO_CHAT: ${SOSIA_MODELO_CHAT:-gpt-5.4-mini}
       SOSIA_MODELO_RACIOCINIO: ${SOSIA_MODELO_RACIOCINIO:-gpt-5.4}
       SOSIA_MODELO_PREVIA: ${SOSIA_MODELO_PREVIA:-gpt-4.1}

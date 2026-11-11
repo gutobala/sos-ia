@@ -48,6 +48,39 @@ docker run --rm -v "D:/Projetos/sos-ia:/app" -w /app --network sos-ia_default -e
 - **Dump:** o `exporta_nucleo.py --aplicar` aplica a tabela e o `dados\menus.sql` antes do `pg_dump`. Em 08/11/2026: GAI com 187
   itens (forms) e 39 sistemas pela wiki, num total de 528 itens.
 
+## Sincronização da wiki (1.5.5)
+O RAG da wiki (`apf.conhecimento_trecho` e `conhecimento_referencia`) se atualiza sozinho pela API XML-RPC da DokuWiki. Antes,
+era uma cópia de 23/10/2026. O pedido do laboratório está em `docs/pedido-sincronizacao-wiki.md` e o código em `nucleo/wiki/`.
+```
+docker exec sosia_api python -m nucleo.wiki              (simula: baixa o que mudou, converte e mostra o que seria gravado)
+docker exec sosia_api python -m nucleo.wiki --aplicar    (grava só o que mudou)
+            ... --sistema gr     só os trechos de um sistema    --tudo   baixa todas as páginas de novo
+```
+- **Quando roda:** todo dia às 03:00 de Brasília (`SOSIA_WIKI_SYNC_HORA`; vazio ou `0` desliga), numa thread da API, ou à mão. A
+  entrevista continua respondendo durante a execução, porque cada página é gravada numa transação curta. O `/saude` mostra a
+  última execução com sucesso em `wiki_atualizada_em`.
+- **Como funciona:**
+  - baixa só as páginas com data ou tamanho novos. O texto fica mascarado em `apf.wiki_pagina_sync`; a 1ª carga das ~4.900
+    páginas leva uns 10 min;
+  - converte a wiki inteira em memória. É a mesma lógica do laboratório (`migracao/referencia_wiki/`), portada para
+    `conversao.py` e `trechos.py`; leva ~1,5 min;
+  - grava só as páginas cujos trechos mudaram. A versão antiga vai para `apf.wiki_trecho_arquivo`;
+  - refaz por diferença as referências, o `sistemas_acesso`, a `data_versao` (= `lastModified` da página) e os menus de fonte wiki
+    dos sistemas afetados;
+  - o vetor 3-large só é gerado para texto novo; texto igual reaproveita o vetor. O e5 fica vazio nas linhas novas.
+- **LGPD:** CPF, e-mail, telefone e os nomes de `dados/nomes_anonimizacao.txt` são mascarados no texto em cache e de novo nos
+  trechos, antes de gravar e de gerar o vetor. A varredura de cada execução tem de dar zero.
+- **Travas:** uma execução por vez (`pg_advisory_lock`). Ela para sem gravar se a API listar 5% menos páginas que o cache, se
+  mais de 5% das páginas forem sair do RAG ou se os vetores passarem do teto (US$ 1). `--forcar` e `--teto` passam por cima.
+- **Relatório:** `apf.wiki_sync_execucao`, uma linha por execução, com as páginas novas, alteradas e removidas, os trechos por
+  sistema, os vetores, as referências e os erros.
+- **Paridade:** `python -m migracao.confere_paridade_wiki` converte o dump de 23/10 (montado em `/dump`) e compara com o banco.
+  Em 11/11/2026, 99,81% dos trechos ficaram iguais (40.578 de 40.657) e 100% dos metadados e das referências. As 34 páginas
+  diferentes são todas de mídia que o laboratório não achava: 19 com acento no nome e 15 com arquivo ausente do dump. O núcleo
+  acha a mídia, e o texto perde o aviso "*(mídia não encontrada)*".
+- **Dump:** o `dados/sosia.dump` passa a servir só para distribuição. O banco vivo é o do container; gere o dump de novo quando
+  for levar uma cópia.
+
 ## Subir só a API em modo mock, sem Docker
 ```
 iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvicorn servico.app:app --port 8010)
@@ -56,7 +89,7 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
 - Cabeçalho obrigatório (menos em `/saude`): `X-SOSIA-Token: mock` (em produção: valor de `SOSIA_TOKEN`).
 - Respostas sempre `application/json; charset=utf-8`; erros sempre no formato `Erro` `{erro, detalhe}`.
 
-## Contrato da API (versão 1.5.4) — `contrato_api/`
+## Contrato da API (versão 1.6.0) — `contrato_api/`
 | Rota | Entrada | Saída |
 |---|---|---|
 | `GET /saude` | — | `Saude` (o SOS decide IA × roteiro fixo por `ok`) |
@@ -116,6 +149,17 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
 - **1.5.4:** `SecaoDocumentacao.html` com o texto da wiki formatado por `nucleo/entrevista/doc_html.py`. O conversor é
   determinístico e sem dependência: escapa tudo e gera só as próprias tags. Trata tabelas, listas, riscado, referências soltas
   e as sobras da conversão. Nos 27 mil trechos de UC/US/RN, leva 0,3 ms por trecho, sem nenhuma tag fora da lista.
+- **1.5.5:** `Saude.wiki_atualizada_em`, a data da última sincronização da wiki aplicada com sucesso (ver "Sincronização da wiki").
+- **1.6.0:** consulta da documentação fora da entrevista (pedido `docs/sosia-1.6.0-consulta-documentacao.md`).
+  - Rotas:
+    - `GET /sistemas/{cd}/documentacao` devolve a árvore por tipo (`motor.arvore_documentacao`);
+    - `GET /documentacao?pagina=&sigla=` devolve a página inteira, com as revogadas riscadas, `referencias` e `citada_por`;
+    - `GET /sistemas/{cd}/documentacao/busca` usa a `busca.busca` da entrevista, com até 2 trechos por página e sem planos
+      de teste por padrão.
+  - No HTML, a referência resolvida vira `<a class="sosia-ref" data-pagina data-secao>`, sem href
+    (`doc_html.para_html(texto, refs)`).
+  - Uma página entra na wiki do sistema quando está em `sistemas:<wiki>:` ou quando o sistema alcança todos os trechos dela
+    (`sistemas_acesso`). Por sigla, também abre a página de destino de um link (`motor.pagina_da_wiki`).
 - Máximo de 2 rodadas do LLM. **Complemento (1.3.0):** depois delas, se ainda faltar item obrigatório, a entrevista não se
   encerra: `complemento=true` e só as perguntas fixas do que falta (`roteiros.perguntas_complemento`; sem IA, sem gatilho, sem a
   decisão da regra, no máximo 5, ids `c{n}p{i}`), repetidas até completar. Evento `complemento`; `analise_ia` não muda.

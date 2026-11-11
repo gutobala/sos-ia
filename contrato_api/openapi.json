@@ -984,7 +984,7 @@
     "/documentacao": {
       "get": {
         "summary": "Documentacao",
-        "description": "Texto de uma página de `EstadoEntrevista.documentos` (1.5.0), seção por seção. 404 se a entrevista não existe ou se a página\nnão é da wiki do sistema dela (só `sistemas:<sistema>:…`).",
+        "description": "Uma página da wiki, seção por seção. Informe `entrevista` OU `sigla` (os dois ou nenhum → 422).\n- `entrevista` (1.5.0): página de `EstadoEntrevista.documentos`, sem as seções revogadas; 404 se a entrevista não existe ou se\n  a página não é da wiki do sistema dela (`sistemas:<sistema>:…`).\n- `sigla` (1.6.0): a página inteira, inclusive as revogadas, para a consulta fora da entrevista; 404 se a página não é da\n  wiki do sistema (ou de uma página que ela alcança pelos links das referências).",
         "operationId": "documentacao_documentacao_get",
         "parameters": [
           {
@@ -1001,12 +1001,37 @@
           {
             "name": "entrevista",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 64,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Entrevista"
+            }
+          },
+          {
+            "name": "sigla",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sigla"
             }
           },
           {
@@ -1083,10 +1108,290 @@
           }
         }
       }
+    },
+    "/sistemas/{cd_sistema}/documentacao": {
+      "get": {
+        "summary": "Arvore Documentacao",
+        "description": "1.6.0: todas as páginas da wiki do sistema, agrupadas por tipo, para a tela Consultar Documentação de Sistema. A sigla\nidentifica a wiki (como em /menus). Sistema sem wiki ou sigla desconhecida: 200 com wiki nula e grupos vazios.",
+        "operationId": "arvore_documentacao_sistemas__cd_sistema__documentacao_get",
+        "parameters": [
+          {
+            "name": "cd_sistema",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Cd Sistema"
+            }
+          },
+          {
+            "name": "sigla",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "title": "Sigla"
+            }
+          },
+          {
+            "name": "x-sosia-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Sosia-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArvoreDocumentacao"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/sistemas/{cd_sistema}/documentacao/busca": {
+      "get": {
+        "summary": "Busca Documentacao",
+        "description": "1.6.0: busca por texto na wiki do sistema (a mesma busca híbrida da entrevista), até 2 trechos por página. Planos de teste\nsó com testes=1. Sem wiki: [].",
+        "operationId": "busca_documentacao_sistemas__cd_sistema__documentacao_busca_get",
+        "parameters": [
+          {
+            "name": "cd_sistema",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Cd Sistema"
+            }
+          },
+          {
+            "name": "sigla",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "title": "Sigla"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 500,
+              "title": "Q"
+            }
+          },
+          {
+            "name": "n",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 30,
+              "minimum": 1,
+              "default": 10,
+              "title": "N"
+            }
+          },
+          {
+            "name": "testes",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1,
+              "minimum": 0,
+              "default": 0,
+              "title": "Testes"
+            }
+          },
+          {
+            "name": "x-sosia-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Sosia-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ResultadoBuscaDocumentacao"
+                  },
+                  "title": "Response Busca Documentacao Sistemas  Cd Sistema  Documentacao Busca Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "ArvoreDocumentacao": {
+        "properties": {
+          "wiki": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wiki",
+            "description": "chave da wiki do sistema (ex.: gai)"
+          },
+          "titulo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Titulo"
+          },
+          "grupos": {
+            "items": {
+              "$ref": "#/components/schemas/GrupoArvore"
+            },
+            "type": "array",
+            "title": "Grupos",
+            "description": "na ordem fixa dos tipos; só os que têm página"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ArvoreDocumentacao",
+        "description": "1.6.0: saída de GET /sistemas/{cd_sistema}/documentacao. Sistema sem wiki (ou sigla desconhecida): wiki nula e grupos []."
+      },
       "CandidatoFuncionalidade": {
         "properties": {
           "id": {
@@ -1181,7 +1486,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.5.4"
+            "default": "1.6.0"
           },
           "situacao": {
             "type": "string",
@@ -1226,7 +1531,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.5.4"
+            "default": "1.6.0"
           },
           "titulo": {
             "type": "string",
@@ -1412,6 +1717,14 @@
             ],
             "title": "Secoes Total",
             "description": "1.5.2: quantas seções a página tem (sem as revogadas)"
+          },
+          "citada_por": {
+            "items": {
+              "$ref": "#/components/schemas/PaginaCitante"
+            },
+            "type": "array",
+            "title": "Citada Por",
+            "description": "1.6.0: páginas que citam esta (até 50, por título)"
           }
         },
         "additionalProperties": false,
@@ -1423,7 +1736,7 @@
           "secoes"
         ],
         "title": "Documentacao",
-        "description": "Saída de GET /documentacao: a página inteira, seção por seção, na ordem da wiki (sem as seções revogadas). 1.5.2: na página\nde regras de negócio, só as regras que a busca trouxe nesta entrevista (com a regra-mãe e as sub-regras)."
+        "description": "Saída de GET /documentacao: a página inteira, seção por seção, na ordem da wiki. Com `entrevista` (1.5.0), sem as seções\nrevogadas; 1.5.2: na página de regras de negócio, só as regras que a busca trouxe nesta entrevista (com a regra-mãe e as\nsub-regras). Com `sigla` (1.6.0), a página inteira, inclusive as revogadas (`revogada: true`)."
       },
       "Documento": {
         "properties": {
@@ -1603,7 +1916,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.5.4"
+            "default": "1.6.0"
           },
           "situacao": {
             "type": "string",
@@ -1762,7 +2075,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.5.4"
+            "default": "1.6.0"
           },
           "rodada": {
             "type": "integer",
@@ -1891,6 +2204,34 @@
           "wiki"
         ],
         "title": "FontePontoPartida"
+      },
+      "GrupoArvore": {
+        "properties": {
+          "tipo": {
+            "type": "string",
+            "title": "Tipo",
+            "description": "inicio, caso_de_uso, user_story, regras_de_negocio, mensagens, glossario, eventos, documento, plano_de_teste ou indice"
+          },
+          "titulo": {
+            "type": "string",
+            "title": "Titulo"
+          },
+          "paginas": {
+            "items": {
+              "$ref": "#/components/schemas/PaginaArvore"
+            },
+            "type": "array",
+            "title": "Paginas"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tipo",
+          "titulo",
+          "paginas"
+        ],
+        "title": "GrupoArvore"
       },
       "GrupoChamado": {
         "properties": {
@@ -2173,6 +2514,63 @@
         "title": "Origem",
         "description": "De onde veio um item do Escopo do Pedido (1.4.0). Só `usuario` é pedido dele; `inferido` é hipótese da análise, que o\nusuário confirma ou remove na tela, e que o estimador mostra à parte (não infla a contagem)."
       },
+      "PaginaArvore": {
+        "properties": {
+          "pagina": {
+            "type": "string",
+            "title": "Pagina",
+            "description": "id da página (sistemas:…); é o que vai em GET /documentacao?pagina=…&sigla="
+          },
+          "titulo": {
+            "type": "string",
+            "title": "Titulo"
+          },
+          "secoes": {
+            "type": "integer",
+            "title": "Secoes",
+            "description": "seções da página, sem as revogadas"
+          },
+          "revogada": {
+            "type": "boolean",
+            "title": "Revogada",
+            "description": "true quando todas as seções são revogadas (a tela mostra em cinza)"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pagina",
+          "titulo",
+          "secoes",
+          "revogada"
+        ],
+        "title": "PaginaArvore"
+      },
+      "PaginaCitante": {
+        "properties": {
+          "pagina": {
+            "type": "string",
+            "title": "Pagina"
+          },
+          "titulo": {
+            "type": "string",
+            "title": "Titulo"
+          },
+          "tipo": {
+            "type": "string",
+            "title": "Tipo"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pagina",
+          "titulo",
+          "tipo"
+        ],
+        "title": "PaginaCitante",
+        "description": "1.6.0: página que cita alguma seção desta página."
+      },
       "Pergunta": {
         "properties": {
           "id": {
@@ -2282,6 +2680,56 @@
         ],
         "title": "PontoPartida",
         "description": "Por onde o usuário entra no sistema (1.5.0). Entra na busca do RAG junto com o relato e preenche `onde_ocorre`\n(corretivo) ou `funcionalidade` (evolutivo existente), que deixam de ser perguntados; em \"algo novo\" é \"onde ficaria\"."
+      },
+      "ReferenciaSecao": {
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "title": "Codigo"
+          },
+          "tipo_ref": {
+            "type": "string",
+            "title": "Tipo Ref",
+            "description": "RN, MN, FE, FA, Tela, RF ou RNF"
+          },
+          "resolvida": {
+            "type": "boolean",
+            "title": "Resolvida"
+          },
+          "pagina": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pagina",
+            "description": "página onde o código está definido (nula se não resolvida)"
+          },
+          "secao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secao",
+            "description": "seção onde o código está definido (nula se não resolvida)"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "codigo",
+          "tipo_ref",
+          "resolvida"
+        ],
+        "title": "ReferenciaSecao",
+        "description": "1.6.0: código citado numa seção (RN257, FE01, Tela02…), resolvido pelo código na wiki do sistema."
       },
       "RegraDocumentada": {
         "properties": {
@@ -2493,6 +2941,57 @@
         ],
         "title": "Respostas"
       },
+      "ResultadoBuscaDocumentacao": {
+        "properties": {
+          "pagina": {
+            "type": "string",
+            "title": "Pagina"
+          },
+          "titulo": {
+            "type": "string",
+            "title": "Titulo",
+            "description": "título da página; na página de regras, \"Regras de negócio: RNxx. …\" (como na 1.5.2)"
+          },
+          "tipo": {
+            "type": "string",
+            "title": "Tipo"
+          },
+          "secao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secao"
+          },
+          "trecho_html": {
+            "type": "string",
+            "title": "Trecho Html",
+            "description": "o trecho que casou, em HTML seguro (como SecaoDocumentacao.html), até ~900 caracteres"
+          },
+          "similaridade": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Similaridade",
+            "description": "cosseno entre a pesquisa e o trecho (0 quando só a palavra casou)"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pagina",
+          "titulo",
+          "tipo",
+          "trecho_html",
+          "similaridade"
+        ],
+        "title": "ResultadoBuscaDocumentacao",
+        "description": "1.6.0: item de GET /sistemas/{cd_sistema}/documentacao/busca."
+      },
       "Saude": {
         "properties": {
           "ok": {
@@ -2506,7 +3005,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.5.4"
+            "default": "1.6.0"
           },
           "mock": {
             "type": "boolean",
@@ -2532,6 +3031,19 @@
           "modo_pii": {
             "type": "string",
             "title": "Modo Pii"
+          },
+          "wiki_atualizada_em": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wiki Atualizada Em",
+            "description": "1.5.5: última sincronização da wiki aplicada com sucesso (nula no mock ou antes da 1ª)"
           }
         },
         "additionalProperties": false,
@@ -2561,8 +3073,22 @@
           "html": {
             "type": "string",
             "title": "Html",
-            "description": "1.5.4: o texto pronto para mostrar (tabelas, listas, riscado, referências), HTML seguro gerado pelo sos-ia: todo o texto da wiki vem escapado; só tags p, br, table, thead, tbody, tr, th, td, ul, ol, li, del, strong, span e div, com classes sosia-*",
+            "description": "1.5.4: o texto pronto para mostrar (tabelas, listas, riscado, referências), HTML seguro gerado pelo sos-ia: todo o texto da wiki vem escapado; só tags p, br, table, thead, tbody, tr, th, td, ul, ol, li, del, strong, span, div e a, com classes sosia-*. 1.6.0: a referência resolvida sai como <a class=\"sosia-ref\" data-pagina=… data-secao=…>, sem href (o SOS põe o href e o clique)",
             "default": ""
+          },
+          "revogada": {
+            "type": "boolean",
+            "title": "Revogada",
+            "description": "1.6.0: seção revogada na wiki (riscada); só vem na consulta por sigla, já com o html riscado",
+            "default": false
+          },
+          "referencias": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenciaSecao"
+            },
+            "type": "array",
+            "title": "Referencias",
+            "description": "1.6.0: o que a seção cita, uma vez por código"
           }
         },
         "additionalProperties": false,

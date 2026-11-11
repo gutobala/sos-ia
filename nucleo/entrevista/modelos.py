@@ -2,12 +2,13 @@
 
 Textos em português, UTF-8. O SOS (proxy entrevistaApi.asp) nunca envia o nome do solicitante.
 """
+import datetime
 from enum import Enum
 from typing import Annotated, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-VERSAO_CONTRATO = "1.5.4"
+VERSAO_CONTRATO = "1.6.0"
 # 1.1.0 (05/11/2026, aditiva): decisão do usuário sobre a regra documentada — POST /entrevistas/{id}/regra, campo
 #        `decisao_regra` no estado e no contrato, `regra_documentada` no contrato, slot pseudo "decisao_regra" em `faltando`.
 # 1.2.0 (05/11/2026, aditiva): confirmação do Escopo do Pedido — POST /entrevistas/{id}/confirmacao (um chamado por tipo, no
@@ -44,6 +45,12 @@ VERSAO_CONTRATO = "1.5.4"
 #        ("Para a Sustentação: …"); `fora_escopo` e `integracoes` do contrato vêm vazios (campos mantidos).
 # 1.5.4 (10/11/2026, aditiva): `SecaoDocumentacao.html` — o texto da wiki pronto para mostrar (tabelas, listas, riscado), HTML
 #        seguro gerado pelo sos-ia (`doc_html.para_html`). `texto` continua igual.
+# 1.5.5 (11/11/2026, aditiva; pedido docs/pedido-sincronizacao-wiki.md): `Saude.wiki_atualizada_em` — última sincronização da
+#        wiki aplicada com sucesso (o RAG passa a se atualizar sozinho, todo dia, pela API da wiki).
+# 1.6.0 (11/11/2026, aditiva; pedido docs/sosia-1.6.0-consulta-documentacao.md): consulta da documentação de um sistema, fora
+#        da entrevista — GET /sistemas/{cd}/documentacao (árvore), GET /documentacao?pagina=…&sigla= (página inteira, com as
+#        revogadas), GET /sistemas/{cd}/documentacao/busca (busca híbrida). Campos novos: SecaoDocumentacao.revogada e
+#        .referencias, Documentacao.citada_por; no html, referência resolvida vira <a class="sosia-ref" data-*>.
 
 
 class Base(BaseModel):
@@ -181,17 +188,39 @@ class Documento(Base):
                                                                   "(1 = o primeiro); nulo sem ponto de partida")
 
 
+class ReferenciaSecao(Base):
+    """1.6.0: código citado numa seção (RN257, FE01, Tela02…), resolvido pelo código na wiki do sistema."""
+    codigo: str
+    tipo_ref: str = Field(description="RN, MN, FE, FA, Tela, RF ou RNF")
+    resolvida: bool
+    pagina: Optional[str] = Field(default=None, description="página onde o código está definido (nula se não resolvida)")
+    secao: Optional[str] = Field(default=None, description="seção onde o código está definido (nula se não resolvida)")
+
+
 class SecaoDocumentacao(Base):
     secao: str
     texto: str
     html: str = Field(default="", description="1.5.4: o texto pronto para mostrar (tabelas, listas, riscado, referências), HTML "
                                               "seguro gerado pelo sos-ia: todo o texto da wiki vem escapado; só tags p, br, table, "
-                                              "thead, tbody, tr, th, td, ul, ol, li, del, strong, span e div, com classes sosia-*")
+                                              "thead, tbody, tr, th, td, ul, ol, li, del, strong, span, div e a, com classes sosia-*. "
+                                              "1.6.0: a referência resolvida sai como <a class=\"sosia-ref\" data-pagina=… "
+                                              "data-secao=…>, sem href (o SOS põe o href e o clique)")
+    revogada: bool = Field(default=False, description="1.6.0: seção revogada na wiki (riscada); só vem na consulta por sigla, já "
+                                                      "com o html riscado")
+    referencias: list[ReferenciaSecao] = Field(default_factory=list, description="1.6.0: o que a seção cita, uma vez por código")
+
+
+class PaginaCitante(Base):
+    """1.6.0: página que cita alguma seção desta página."""
+    pagina: str
+    titulo: str
+    tipo: str
 
 
 class Documentacao(Base):
-    """Saída de GET /documentacao: a página inteira, seção por seção, na ordem da wiki (sem as seções revogadas). 1.5.2: na página
-    de regras de negócio, só as regras que a busca trouxe nesta entrevista (com a regra-mãe e as sub-regras)."""
+    """Saída de GET /documentacao: a página inteira, seção por seção, na ordem da wiki. Com `entrevista` (1.5.0), sem as seções
+    revogadas; 1.5.2: na página de regras de negócio, só as regras que a busca trouxe nesta entrevista (com a regra-mãe e as
+    sub-regras). Com `sigla` (1.6.0), a página inteira, inclusive as revogadas (`revogada: true`)."""
     pagina: str
     titulo: str
     tipo: str
@@ -199,6 +228,38 @@ class Documentacao(Base):
     parcial: bool = Field(default=False, description="1.5.2: true = só parte das seções (a regra que casou); a página tem "
                                                      "secoes_total seções")
     secoes_total: Optional[int] = Field(default=None, description="1.5.2: quantas seções a página tem (sem as revogadas)")
+    citada_por: list[PaginaCitante] = Field(default_factory=list, description="1.6.0: páginas que citam esta (até 50, por título)")
+
+
+class PaginaArvore(Base):
+    pagina: str = Field(description="id da página (sistemas:…); é o que vai em GET /documentacao?pagina=…&sigla=")
+    titulo: str
+    secoes: int = Field(description="seções da página, sem as revogadas")
+    revogada: bool = Field(description="true quando todas as seções são revogadas (a tela mostra em cinza)")
+
+
+class GrupoArvore(Base):
+    tipo: str = Field(description="inicio, caso_de_uso, user_story, regras_de_negocio, mensagens, glossario, eventos, documento, "
+                                  "plano_de_teste ou indice")
+    titulo: str
+    paginas: list[PaginaArvore]
+
+
+class ArvoreDocumentacao(Base):
+    """1.6.0: saída de GET /sistemas/{cd_sistema}/documentacao. Sistema sem wiki (ou sigla desconhecida): wiki nula e grupos []."""
+    wiki: Optional[str] = Field(default=None, description="chave da wiki do sistema (ex.: gai)")
+    titulo: Optional[str] = None
+    grupos: list[GrupoArvore] = Field(default_factory=list, description="na ordem fixa dos tipos; só os que têm página")
+
+
+class ResultadoBuscaDocumentacao(Base):
+    """1.6.0: item de GET /sistemas/{cd_sistema}/documentacao/busca."""
+    pagina: str
+    titulo: str = Field(description="título da página; na página de regras, \"Regras de negócio: RNxx. …\" (como na 1.5.2)")
+    tipo: str
+    secao: Optional[str] = None
+    trecho_html: str = Field(description="o trecho que casou, em HTML seguro (como SecaoDocumentacao.html), até ~900 caracteres")
+    similaridade: float = Field(ge=0, le=1, description="cosseno entre a pesquisa e o trecho (0 quando só a palavra casou)")
 
 
 class CandidatoFuncionalidade(Base):
@@ -331,6 +392,8 @@ class Saude(Base):
     banco_app: bool = Field(description="banco da aplicação (entrevistas e Escopo do Pedido confirmado)")
     embeddings: str
     modo_pii: str
+    wiki_atualizada_em: Optional[datetime.datetime] = Field(
+        default=None, description="1.5.5: última sincronização da wiki aplicada com sucesso (nula no mock ou antes da 1ª)")
 
 
 class Erro(Base):

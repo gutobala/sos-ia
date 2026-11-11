@@ -15,9 +15,9 @@ import logging
 
 from nucleo import config, db, llm
 from nucleo.entrevista.confirmacao import ConfirmacaoInvalida, EscopoInvalido
-from nucleo.entrevista.modelos import (Confirmacao, Contrato, DecisaoRegraDocumentada, Documentacao, EntrevistaPendente, Erro,
-                                       EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista, Menus, NovaEntrevista,
-                                       Respostas, Saude, VinculoChamados)
+from nucleo.entrevista.modelos import (ArvoreDocumentacao, Confirmacao, Contrato, DecisaoRegraDocumentada, Documentacao,
+                                       EntrevistaPendente, Erro, EscopoChamado, EscopoConfirmado, EscopoEditado, EstadoEntrevista,
+                                       Menus, NovaEntrevista, Respostas, ResultadoBuscaDocumentacao, Saude, VinculoChamados)
 
 class JSONUtf8(JSONResponse):
     """O proxy ASP (MSXML2.ServerXMLHTTP) decide a codificação pelo cabeçalho: charset explícito."""
@@ -35,6 +35,8 @@ else:
     motor = Motor()
     from nucleo import aquecimento
     aquecimento.inicia()          # pg_prewarm + busca de mentira na subida e a cada SOSIA_AQUECER_MIN (thread em segundo plano)
+    from nucleo.wiki import agenda
+    agenda.inicia()               # sincronização diária da wiki (SOSIA_WIKI_SYNC_HORA, padrão 03:00 de Brasília)
 
 
 def exige_token(x_sosia_token: str = Header(default="")):
@@ -87,7 +89,26 @@ def saude():
     banco_app = config.MOCK or db.ping_app()
     return Saude(ok=motor is not None and banco and banco_app, versao=config.VERSAO, mock=config.MOCK,
                  llm=(not config.MOCK) and llm.disponivel(), banco=banco, banco_app=banco_app, embeddings=config.EMB,
-                 modo_pii=config.MODO_PII)
+                 modo_pii=config.MODO_PII, wiki_atualizada_em=None if config.MOCK or not banco else _wiki_atualizada_em())
+
+
+_wiki_cache = {}
+
+
+def _wiki_atualizada_em():
+    """1.5.5: data da última sincronização da wiki aplicada com sucesso. Cache de 60 s (o healthcheck chama a cada 15 s)."""
+    import time
+    if time.time() - _wiki_cache.get("t", 0) < 60:
+        return _wiki_cache.get("v")
+    v = None
+    try:
+        from nucleo.wiki import sincroniza
+        with db.db() as c:
+            v = sincroniza.ultima(c)
+    except Exception:  # noqa: BLE001  (o /saude nunca falha por isto)
+        pass
+    _wiki_cache.update(t=time.time(), v=v)
+    return v
 
 
 @app.post("/entrevistas", response_model=EstadoEntrevista, responses=ERROS, dependencies=[Depends(exige_token)])
@@ -177,10 +198,34 @@ def menus_do_sistema(cd_sistema: int, sigla: str = Query(min_length=1, max_lengt
 
 
 @app.get("/documentacao", response_model=Documentacao, responses=ERROS, dependencies=[Depends(exige_token)])
-def documentacao(pagina: str = Query(min_length=1, max_length=300), entrevista: str = Query(min_length=1, max_length=64)):
-    """Texto de uma página de `EstadoEntrevista.documentos` (1.5.0), seção por seção. 404 se a entrevista não existe ou se a página
-    não é da wiki do sistema dela (só `sistemas:<sistema>:…`)."""
+def documentacao(pagina: str = Query(min_length=1, max_length=300),
+                 entrevista: str | None = Query(default=None, min_length=1, max_length=64),
+                 sigla: str | None = Query(default=None, min_length=1, max_length=40)):
+    """Uma página da wiki, seção por seção. Informe `entrevista` OU `sigla` (os dois ou nenhum → 422).
+    - `entrevista` (1.5.0): página de `EstadoEntrevista.documentos`, sem as seções revogadas; 404 se a entrevista não existe ou se
+      a página não é da wiki do sistema dela (`sistemas:<sistema>:…`).
+    - `sigla` (1.6.0): a página inteira, inclusive as revogadas, para a consulta fora da entrevista; 404 se a página não é da
+      wiki do sistema (ou de uma página que ela alcança pelos links das referências)."""
+    if (entrevista is None) == (sigla is None):
+        raise HTTPException(422, "informe entrevista ou sigla (um dos dois)")
     try:
-        return _motor().documentacao(pagina, entrevista)
+        return _motor().documentacao(pagina, entrevista, sigla)
     except KeyError:
-        raise HTTPException(404, "página não encontrada para esta entrevista")
+        raise HTTPException(404, "página não encontrada" + (" para esta entrevista" if entrevista else " na wiki deste sistema"))
+
+
+@app.get("/sistemas/{cd_sistema}/documentacao", response_model=ArvoreDocumentacao, responses=ERROS,
+         dependencies=[Depends(exige_token)])
+def arvore_documentacao(cd_sistema: int, sigla: str = Query(min_length=1, max_length=40)):
+    """1.6.0: todas as páginas da wiki do sistema, agrupadas por tipo, para a tela Consultar Documentação de Sistema. A sigla
+    identifica a wiki (como em /menus). Sistema sem wiki ou sigla desconhecida: 200 com wiki nula e grupos vazios."""
+    return _motor().arvore_documentacao(cd_sistema, sigla)
+
+
+@app.get("/sistemas/{cd_sistema}/documentacao/busca", response_model=list[ResultadoBuscaDocumentacao], responses=ERROS,
+         dependencies=[Depends(exige_token)])
+def busca_documentacao(cd_sistema: int, sigla: str = Query(min_length=1, max_length=40), q: str = Query(min_length=3, max_length=500),
+                       n: int = Query(default=10, ge=1, le=30), testes: int = Query(default=0, ge=0, le=1)):
+    """1.6.0: busca por texto na wiki do sistema (a mesma busca híbrida da entrevista), até 2 trechos por página. Planos de teste
+    só com testes=1. Sem wiki: []."""
+    return _motor().busca_documentacao(cd_sistema, sigla, q, n, testes == 1)

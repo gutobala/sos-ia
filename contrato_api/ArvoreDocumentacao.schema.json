@@ -1,0 +1,106 @@
+{
+  "$defs": {
+    "GrupoArvore": {
+      "additionalProperties": false,
+      "properties": {
+        "tipo": {
+          "description": "inicio, caso_de_uso, user_story, regras_de_negocio, mensagens, glossario, eventos, documento, plano_de_teste ou indice",
+          "title": "Tipo",
+          "type": "string"
+        },
+        "titulo": {
+          "title": "Titulo",
+          "type": "string"
+        },
+        "paginas": {
+          "items": {
+            "$ref": "#/$defs/PaginaArvore"
+          },
+          "title": "Paginas",
+          "type": "array"
+        }
+      },
+      "required": [
+        "tipo",
+        "titulo",
+        "paginas"
+      ],
+      "title": "GrupoArvore",
+      "type": "object"
+    },
+    "PaginaArvore": {
+      "additionalProperties": false,
+      "properties": {
+        "pagina": {
+          "description": "id da página (sistemas:…); é o que vai em GET /documentacao?pagina=…&sigla=",
+          "title": "Pagina",
+          "type": "string"
+        },
+        "titulo": {
+          "title": "Titulo",
+          "type": "string"
+        },
+        "secoes": {
+          "description": "seções da página, sem as revogadas",
+          "title": "Secoes",
+          "type": "integer"
+        },
+        "revogada": {
+          "description": "true quando todas as seções são revogadas (a tela mostra em cinza)",
+          "title": "Revogada",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "pagina",
+        "titulo",
+        "secoes",
+        "revogada"
+      ],
+      "title": "PaginaArvore",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "1.6.0: saída de GET /sistemas/{cd_sistema}/documentacao. Sistema sem wiki (ou sigla desconhecida): wiki nula e grupos [].",
+  "properties": {
+    "wiki": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "chave da wiki do sistema (ex.: gai)",
+      "title": "Wiki"
+    },
+    "titulo": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Titulo"
+    },
+    "grupos": {
+      "description": "na ordem fixa dos tipos; só os que têm página",
+      "items": {
+        "$ref": "#/$defs/GrupoArvore"
+      },
+      "title": "Grupos",
+      "type": "array"
+    }
+  },
+  "title": "ArvoreDocumentacao",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/ArvoreDocumentacao.schema.json",
+  "x-versao-contrato": "1.6.0"
+}

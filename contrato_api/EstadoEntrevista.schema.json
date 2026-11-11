@@ -350,7 +350,7 @@
       "type": "string"
     },
     "versao_contrato": {
-      "default": "1.5.4",
+      "default": "1.6.0",
       "title": "Versao Contrato",
       "type": "string"
     },
@@ -457,5 +457,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/EstadoEntrevista.schema.json",
-  "x-versao-contrato": "1.5.4"
+  "x-versao-contrato": "1.6.0"
 }

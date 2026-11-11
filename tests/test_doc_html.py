@@ -48,6 +48,20 @@ def test_lista_numerada_da_wiki():
                  "<li>Se terceiro: sem desconto.</li></ol><p>Depois.</p>")
 
 
+def test_referencia_resolvida_vira_link_sem_href():
+    """1.6.0: código com referência resolvida → <a class="sosia-ref" data-pagina data-secao>; os valores vêm escapados (até "~" e
+    "*", para o riscado e o negrito não atravessarem a tag) e o código sem referência continua texto."""
+    refs = {"RN:1": ("sistemas:x:regras", 'REGRAS > ~~RN01 "antiga"~~ **x**'), "FE:1": ("sistemas:x:uc1", "FE01 - Erro")}
+    h = para_html("P3. O sistema valida o pedido;\nRN01,\n~~RN149~~,\nFE01\n| Campo | Regra |\n| --- | --- |\n| Código | RN 01 e RN02 |", refs)
+    link = ('<a class="sosia-ref" data-pagina="sistemas:x:regras" '
+            'data-secao="REGRAS &gt; &#126;&#126;RN01 &quot;antiga&quot;&#126;&#126; &#42;&#42;x&#42;&#42;">')
+    assert f'<span class="sosia-refs">{link}RN01</a>, <del>RN149</del>, <a class="sosia-ref" data-pagina="sistemas:x:uc1" ' \
+           f'data-secao="FE01 - Erro">FE01</a></span>' in h
+    assert f"<td>{link}RN 01</a> e RN02</td>" in h                                 # na tabela também; RN02 não resolvida
+    assert "href" not in h and tags(h) <= TAGS_PERMITIDAS | {"a"}
+    assert para_html("RN01") == "<p>RN01</p>"                                       # sem refs, nada muda
+
+
 def test_vazio_e_texto_simples():
     assert para_html("") == "" and para_html(None) == ""
     assert para_html("Linha 1\nLinha 2\n\nOutro parágrafo") == "<p>Linha 1<br>Linha 2</p><p>Outro parágrafo</p>"

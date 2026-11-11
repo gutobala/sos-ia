@@ -1,0 +1,55 @@
+{
+  "additionalProperties": false,
+  "description": "1.6.0: item de GET /sistemas/{cd_sistema}/documentacao/busca.",
+  "properties": {
+    "pagina": {
+      "title": "Pagina",
+      "type": "string"
+    },
+    "titulo": {
+      "description": "título da página; na página de regras, \"Regras de negócio: RNxx. …\" (como na 1.5.2)",
+      "title": "Titulo",
+      "type": "string"
+    },
+    "tipo": {
+      "title": "Tipo",
+      "type": "string"
+    },
+    "secao": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Secao"
+    },
+    "trecho_html": {
+      "description": "o trecho que casou, em HTML seguro (como SecaoDocumentacao.html), até ~900 caracteres",
+      "title": "Trecho Html",
+      "type": "string"
+    },
+    "similaridade": {
+      "description": "cosseno entre a pesquisa e o trecho (0 quando só a palavra casou)",
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Similaridade",
+      "type": "number"
+    }
+  },
+  "required": [
+    "pagina",
+    "titulo",
+    "tipo",
+    "trecho_html",
+    "similaridade"
+  ],
+  "title": "ResultadoBuscaDocumentacao",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sos-ia/ResultadoBuscaDocumentacao.schema.json",
+  "x-versao-contrato": "1.6.0"
+}

@@ -1,5 +1,82 @@
 {
   "$defs": {
+    "PaginaCitante": {
+      "additionalProperties": false,
+      "description": "1.6.0: página que cita alguma seção desta página.",
+      "properties": {
+        "pagina": {
+          "title": "Pagina",
+          "type": "string"
+        },
+        "titulo": {
+          "title": "Titulo",
+          "type": "string"
+        },
+        "tipo": {
+          "title": "Tipo",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pagina",
+        "titulo",
+        "tipo"
+      ],
+      "title": "PaginaCitante",
+      "type": "object"
+    },
+    "ReferenciaSecao": {
+      "additionalProperties": false,
+      "description": "1.6.0: código citado numa seção (RN257, FE01, Tela02…), resolvido pelo código na wiki do sistema.",
+      "properties": {
+        "codigo": {
+          "title": "Codigo",
+          "type": "string"
+        },
+        "tipo_ref": {
+          "description": "RN, MN, FE, FA, Tela, RF ou RNF",
+          "title": "Tipo Ref",
+          "type": "string"
+        },
+        "resolvida": {
+          "title": "Resolvida",
+          "type": "boolean"
+        },
+        "pagina": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "página onde o código está definido (nula se não resolvida)",
+          "title": "Pagina"
+        },
+        "secao": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "seção onde o código está definido (nula se não resolvida)",
+          "title": "Secao"
+        }
+      },
+      "required": [
+        "codigo",
+        "tipo_ref",
+        "resolvida"
+      ],
+      "title": "ReferenciaSecao",
+      "type": "object"
+    },
     "SecaoDocumentacao": {
       "additionalProperties": false,
       "properties": {
@@ -13,9 +90,23 @@
         },
         "html": {
           "default": "",
-          "description": "1.5.4: o texto pronto para mostrar (tabelas, listas, riscado, referências), HTML seguro gerado pelo sos-ia: todo o texto da wiki vem escapado; só tags p, br, table, thead, tbody, tr, th, td, ul, ol, li, del, strong, span e div, com classes sosia-*",
+          "description": "1.5.4: o texto pronto para mostrar (tabelas, listas, riscado, referências), HTML seguro gerado pelo sos-ia: todo o texto da wiki vem escapado; só tags p, br, table, thead, tbody, tr, th, td, ul, ol, li, del, strong, span, div e a, com classes sosia-*. 1.6.0: a referência resolvida sai como <a class=\"sosia-ref\" data-pagina=… data-secao=…>, sem href (o SOS põe o href e o clique)",
           "title": "Html",
           "type": "string"
+        },
+        "revogada": {
+          "default": false,
+          "description": "1.6.0: seção revogada na wiki (riscada); só vem na consulta por sigla, já com o html riscado",
+          "title": "Revogada",
+          "type": "boolean"
+        },
+        "referencias": {
+          "description": "1.6.0: o que a seção cita, uma vez por código",
+          "items": {
+            "$ref": "#/$defs/ReferenciaSecao"
+          },
+          "title": "Referencias",
+          "type": "array"
         }
       },
       "required": [
@@ -27,7 +118,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "Saída de GET /documentacao: a página inteira, seção por seção, na ordem da wiki (sem as seções revogadas). 1.5.2: na página\nde regras de negócio, só as regras que a busca trouxe nesta entrevista (com a regra-mãe e as sub-regras).",
+  "description": "Saída de GET /documentacao: a página inteira, seção por seção, na ordem da wiki. Com `entrevista` (1.5.0), sem as seções\nrevogadas; 1.5.2: na página de regras de negócio, só as regras que a busca trouxe nesta entrevista (com a regra-mãe e as\nsub-regras). Com `sigla` (1.6.0), a página inteira, inclusive as revogadas (`revogada: true`).",
   "properties": {
     "pagina": {
       "title": "Pagina",
@@ -66,6 +157,14 @@
       "default": null,
       "description": "1.5.2: quantas seções a página tem (sem as revogadas)",
       "title": "Secoes Total"
+    },
+    "citada_por": {
+      "description": "1.6.0: páginas que citam esta (até 50, por título)",
+      "items": {
+        "$ref": "#/$defs/PaginaCitante"
+      },
+      "title": "Citada Por",
+      "type": "array"
     }
   },
   "required": [
@@ -78,5 +177,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/Documentacao.schema.json",
-  "x-versao-contrato": "1.5.4"
+  "x-versao-contrato": "1.6.0"
 }

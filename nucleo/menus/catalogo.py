@@ -36,6 +36,75 @@ def sql_carga(sistema, fonte, itens, sistema_id=None):
             f"FROM jsonb_populate_recordset(NULL::apf.menu_sistema, $menus${corpo}$menus$::jsonb);\n")
 
 
+def sistemas(conn):
+    """({chave: (id, sigla)} de apf.sistema, {chave do alias: (id, sigla)})."""
+    canon, alias = {}, {}
+    for r in conn.execute("SELECT id, sigla FROM apf.sistema ORDER BY sigla"):
+        canon[chave_sistema(r["sigla"])] = (r["id"], r["sigla"])
+    for r in conn.execute("SELECT a.alias, s.id, s.sigla FROM apf.sistema_alias a JOIN apf.sistema s ON s.id = a.sistema_id"):
+        k = chave_sistema(r["alias"])
+        if k not in canon:
+            alias.setdefault(k, (r["id"], r["sigla"]))
+    return canon, alias
+
+
+def chave_canonica(sistema_wiki, alias):
+    """Chave do catálogo para um sistema da wiki: a da sigla oficial quando a wiki usa um alias ("esocial" -> "e_social")."""
+    k = chave_sistema(sistema_wiki)
+    return chave_sistema(alias[k][1]) if k in alias else k
+
+
+def trechos_wiki(conn, alias, chaves=None):
+    """Casos de uso e user stories, só a versão mais recente de cada seção, agrupados pela chave da sigla oficial.
+    `chaves`: só esses sistemas (chaves canônicas)."""
+    import collections
+    rows = conn.execute("""SELECT DISTINCT ON (origem_dokuwiki, secao, ordem) sistema, tipo, secao, texto, origem_dokuwiki
+                           FROM apf.conhecimento_trecho WHERE tipo IN ('caso_de_uso', 'user_story')
+                           ORDER BY origem_dokuwiki, secao, ordem, data_versao DESC""").fetchall()
+    por = collections.defaultdict(list)
+    for r in rows:
+        k = chave_canonica(r["sistema"], alias)
+        if chaves is None or k in chaves:
+            por[k].append(r)
+    return por
+
+
+def cargas_wiki(conn, chaves=None):
+    """[(chave, "wiki", itens, sistema_id)] dos caminhos de menu citados na wiki. `chaves`: só esses sistemas."""
+    from . import wiki
+    canon, alias = sistemas(conn)
+    sis = {**alias, **canon}
+    out = []
+    for k, ts in sorted(trechos_wiki(conn, alias, chaves).items()):
+        siglas = {k} | {a for a, (_, s) in alias.items() if chave_sistema(s) == k}
+        itens = wiki.extrai(ts, k, siglas)
+        if itens:
+            out.append((k, "wiki", itens, sis.get(k, (None,))[0]))
+    return out
+
+
+def recarrega_wiki(conn, sistemas_wiki):
+    """Refaz os menus de fonte wiki dos sistemas da wiki indicados (depois de uma sincronização). Os menus próprios (FORMS etc.)
+    não mudam. Não faz commit. Devolve {chave: nº de itens}."""
+    _, alias = sistemas(conn)
+    chaves = {chave_canonica(s, alias) for s in sistemas_wiki}
+    if not chaves:
+        return {}
+    garante(conn)
+    cargas = {k: (f, itens, sid) for k, f, itens, sid in cargas_wiki(conn, chaves)}
+    out = {}
+    for k in sorted(chaves):
+        if k in cargas:
+            f, itens, sid = cargas[k]
+            conn.execute(sql_carga(k, f, itens, sid))
+            out[k] = len(itens)
+        else:
+            conn.execute("DELETE FROM apf.menu_sistema WHERE sistema = %s AND fonte = 'wiki'", (k,))
+            out[k] = 0
+        _cache.pop(k, None)
+    return out
+
+
 def _sigla_canonica(conn, sigla):
     r = conn.execute("""SELECT sigla FROM apf.sistema WHERE upper(sigla) = upper(%s)
                         UNION ALL SELECT s.sigla FROM apf.sistema_alias a JOIN apf.sistema s ON s.id = a.sistema_id

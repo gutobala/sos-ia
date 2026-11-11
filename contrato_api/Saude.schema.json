@@ -10,7 +10,7 @@
       "type": "string"
     },
     "versao_contrato": {
-      "default": "1.5.4",
+      "default": "1.6.0",
       "title": "Versao Contrato",
       "type": "string"
     },
@@ -38,6 +38,20 @@
     "modo_pii": {
       "title": "Modo Pii",
       "type": "string"
+    },
+    "wiki_atualizada_em": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "1.5.5: última sincronização da wiki aplicada com sucesso (nula no mock ou antes da 1ª)",
+      "title": "Wiki Atualizada Em"
     }
   },
   "required": [
@@ -54,5 +68,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/Saude.schema.json",
-  "x-versao-contrato": "1.5.4"
+  "x-versao-contrato": "1.6.0"
 }

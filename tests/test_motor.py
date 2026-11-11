@@ -558,6 +558,68 @@ def test_documentos_e_documentacao(ambiente, monkeypatch):
     assert v1["conteudo"]["documentos_lidos"] == [uc]
 
 
+# ---------------------------------------------------------------- 1.6.0: consulta da documentação (banco real do núcleo)
+def test_arvore_da_documentacao_do_sistema():
+    mot = M.Motor()
+    a = mot.arvore_documentacao(12, "GAI")
+    assert a.wiki == "gai" and a.grupos
+    ordem = [t for t, _ in M.GRUPOS_DOC]
+    tipos = [g.tipo for g in a.grupos]
+    assert tipos == sorted(tipos, key=ordem.index) and tipos[0] == "inicio"
+    assert a.grupos[0].paginas[0].pagina == "sistemas:gai:inicio"
+    ucs = next(g for g in a.grupos if g.tipo == "caso_de_uso").paginas
+    assert [p.titulo for p in ucs] == sorted((p.titulo for p in ucs), key=M.chave_natural)
+    assert all(p.pagina.startswith("sistemas:gai:") for g in a.grupos for p in g.paginas)
+    assert any(g.tipo == "plano_de_teste" for g in a.grupos)                        # na árvore, sim; na busca, só com testes=1
+    vazia = mot.arvore_documentacao(1, "NAO_EXISTE")
+    assert vazia.wiki is None and vazia.grupos == []
+
+
+def test_pagina_inteira_por_sigla_com_revogadas_referencias_e_links():
+    import re
+    mot = M.Motor()
+    with db.db() as c:
+        r = c.execute("""SELECT origem_dokuwiki p FROM apf.conhecimento_trecho WHERE origem_dokuwiki LIKE 'sistemas:gai:%%'
+                         AND tipo = 'regras_de_negocio' AND secao LIKE '%%~~%%' LIMIT 1""").fetchone()
+    regras = r["p"]
+    pag = mot.documentacao(regras, sigla="GAI")
+    rev = [s for s in pag.secoes if s.revogada]
+    assert rev and all(s.html.startswith("<del>") for s in rev)                  # revogadas aparecem, riscadas
+    assert pag.parcial is False and pag.secoes_total == len(pag.secoes) - len(rev)
+    assert pag.citada_por and len(pag.citada_por) <= M.MAX_CITADA_POR
+    # um caso de uso que cita regra: a referência resolvida vira link para uma página que também abre por sigla
+    uc = pag.citada_por[0].pagina
+    p2 = mot.documentacao(uc, sigla="GAI")
+    refs = [x for s in p2.secoes for x in s.referencias]
+    assert any(x.resolvida and x.pagina for x in refs) and all(x.pagina is None for x in refs if not x.resolvida)
+    links = re.findall(r'<a class="sosia-ref" data-pagina="([^"]+)" data-secao="[^"]*">', "".join(s.html for s in p2.secoes))
+    assert links and "href" not in "".join(s.html for s in p2.secoes)
+    assert mot.documentacao(links[0].replace("&#126;", "~"), sigla="GAI").secoes
+    for outra in ("sistemas:gop:documentacao_tecnica:inicio", uc + "x"):
+        with pytest.raises(KeyError):
+            mot.documentacao(outra, sigla="GAI")
+    with pytest.raises(KeyError):
+        mot.documentacao(uc, sigla="NAO_EXISTE")
+
+
+def test_busca_da_documentacao_monta_a_resposta(monkeypatch):
+    achados = [dict(origem_dokuwiki="sistemas:gai:documentacao_tecnica:regras_de_negocio:inicio", tipo="regras_de_negocio",
+                    titulo_pagina="gai - regras de negocio", secao="REGRAS > RN257. Desconto de 25%", texto="x" * 2000, cos=1.0000002),
+               dict(origem_dokuwiki="sistemas:gai:uc001", tipo="caso_de_uso", titulo_pagina="UC001 - Manter", secao="", texto="ok",
+                    cos=None)]
+    chamadas = []
+
+    def falsa(conn, q, sistema, **kw):
+        chamadas.append((q, sistema, kw))
+        return {"resultados": [dict(a) for a in achados]}
+    monkeypatch.setattr(M.busca, "busca", falsa)
+    res = M.Motor().busca_documentacao(12, "GAI", "desconto quitação", n=7, testes=False)
+    assert chamadas == [("desconto quitação", "gai", dict(n=7, incluir_teste=False, expandir=False, max_por_pagina=2))]
+    assert res[0].titulo == "Regras de negócio: RN257. Desconto de 25%" and res[0].similaridade == 1.0
+    assert len(res[0].trecho_html) < 1000 and res[1].similaridade == 0 and res[1].secao is None
+    assert M.Motor().busca_documentacao(12, "NAO_EXISTE", "qualquer coisa") == []
+
+
 def test_menus_do_catalogo(ambiente):
     """Lê o catálogo carregado no banco do núcleo (pulado sem a carga); sigla desconhecida dá "nenhuma"."""
     mot, _ = ambiente

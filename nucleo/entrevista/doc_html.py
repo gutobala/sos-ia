@@ -10,9 +10,35 @@ aparece como texto. O que trata, pelo que aparece nos 27 mil trechos de UC/US/RN
   - referências soltas uma por linha (RN01, Tela02, FE01, MN013…) → juntas na linha do passo, em destaque discreto;
   - passos "P1.", "FE01.", "FA02.1." e rótulos "BREVE DESCRIÇÃO:" no começo da linha → negrito;
   - sobras da conversão ("---", "Voltar", "#####" vazio) → somem.
+1.6.0: com `refs` (as referências resolvidas da seção), cada código citado vira `<a class="sosia-ref" data-pagina data-secao>`,
+sem href. A tag `a` só sai daqui, com esses atributos, e os valores vêm escapados.
 """
+import contextvars
 import html
 import re
+
+# códigos citados, como o indexador da wiki os reconhece (nucleo/wiki/trechos.RE_CODIGO): a chave é "RN:257"
+RX_CODIGO = re.compile(r"\b(RNF|RN|FE|FA|MN|RF|Tela)[ .-]?0*(\d{1,4})\b")
+_REFS = contextvars.ContextVar("sosia_doc_refs", default=None)
+
+
+def _attr(v):
+    """Valor de atributo: escapado, e sem "~" e "*" crus (o riscado e o negrito são aplicados depois e não podem casar aqui)."""
+    return html.escape(v or "", quote=True).replace("~", "&#126;").replace("*", "&#42;")
+
+
+def _links(t):
+    """Texto já escapado: códigos com referência resolvida viram link."""
+    refs = _REFS.get()
+    if not refs:
+        return t
+
+    def sub(m):
+        alvo = refs.get(f"{m.group(1)}:{int(m.group(2))}")
+        if not alvo:
+            return m.group(0)
+        return f'<a class="sosia-ref" data-pagina="{_attr(alvo[0])}" data-secao="{_attr(alvo[1])}">{m.group(0)}</a>'
+    return RX_CODIGO.sub(sub, t)
 
 RX_SOBRA = re.compile(r"^\s*(?:-{3,}|voltar|#+)\s*$", re.I)
 RX_TITULO = re.compile(r"^\s*#{1,6}\s+(.+?)\s*#*\s*$")
@@ -46,7 +72,7 @@ def _inline(t):
     """Uma linha (ou célula): links viram texto, depois escapa e aplica riscado/negrito."""
     t = RX_LINK_DOKU.sub(lambda m: (m.group(2) or m.group(1).split(":")[-1]).strip(), t)
     t = RX_LINK_MD.sub(lambda m: m.group(1), t)
-    t = html.escape(t, quote=False)
+    t = _links(html.escape(t, quote=False))
     t = RX_RISCO.sub(r"<del>\1</del>", t)
     return RX_NEGRITO.sub(r"<strong>\1</strong>", t)
 
@@ -121,8 +147,17 @@ def _lista(linhas):
         (f'<li class="sosia-nivel{n - base}">' if n > base else "<li>") + _linha(t) + "</li>" for n, t in itens) + f"</{tag}>"
 
 
-def para_html(texto):
-    """HTML seguro de um trecho da wiki. Texto vazio → ""."""
+def para_html(texto, refs=None):
+    """HTML seguro de um trecho da wiki. Texto vazio → "". `refs` (1.6.0): {"RN:257": (página, seção)} das referências
+    resolvidas do trecho, que viram link."""
+    marca = _REFS.set(refs or None)
+    try:
+        return _para_html(texto)
+    finally:
+        _REFS.reset(marca)
+
+
+def _para_html(texto):
     linhas = [l.rstrip() for l in (texto or "").replace("\r\n", "\n").split("\n")]
     linhas = _junta_refs([l for l in linhas if not RX_SOBRA.match(l)])
     blocos, i, n = [], 0, len(linhas)

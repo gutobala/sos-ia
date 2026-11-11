@@ -1,9 +1,47 @@
 # sos-ia → sessão do SOS: o que mudou e o que o SOS precisa fazer (10/11/2026)
 
 O serviço sos-ia (núcleo da abertura de chamados com IA) está pronto para a integração. O motor real da entrevista funciona de
-ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.5.4** (aditivo: nenhum campo ou
+ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.6.0** (aditivo: nenhum campo ou
 rota existente mudou de significado, e os campos novos de entrada são opcionais). Os JSON Schemas de cada endpoint ficam em
 `contrato_api/`, com o `openapi.json`.
+
+**Novo na 1.6.0 (11/11/2026): consulta da documentação de um sistema** (pedido `docs/sosia-1.6.0-consulta-documentacao.md`).
+Só acréscimos; mostre a tela quando o `/saude` responder `versao_contrato` ≥ 1.6.0. Todas as rotas exigem o `X-SOSIA-Token`.
+1. **Árvore:** `GET /sistemas/{cd_sistema}/documentacao?sigla=GAI` → `{wiki, titulo, grupos: [{tipo, titulo, paginas: [{pagina, titulo,
+   secoes, revogada}]}]}`.
+   - Grupos na ordem: inicio, caso_de_uso, user_story, regras_de_negocio, mensagens, glossario, eventos, documento,
+     plano_de_teste, indice. Só vêm os grupos que têm página.
+   - Páginas em ordem natural de título.
+   - `revogada: true` quando todas as seções são revogadas (mostrar em cinza).
+   - Sem wiki ou sigla desconhecida: `wiki: null`, `grupos: []`.
+   - Medido no banco: GAI com 202 páginas em 0,4 s; Benner com 477 em 0,2 s.
+2. **Página inteira:** `GET /documentacao?pagina=…&sigla=GAI`. `entrevista` e `sigla` são excludentes: os dois, ou nenhum → 422.
+   - Vêm todas as seções, inclusive as revogadas (`revogada: true`, com o `html` dentro de `<del>`). `parcial` é sempre false.
+   - Campos novos em cada seção: `referencias: [{codigo, tipo_ref, resolvida, pagina, secao}]`. A página ganha
+     `citada_por: [{pagina, titulo, tipo}]`, com até 50 itens.
+   - No `html`, a referência resolvida vira `<a class="sosia-ref" data-pagina="…" data-secao="…">RN257</a>`, **sem href**.
+     Ponha o `href="#"` e o clique: abrir `GET /documentacao?pagina=<data-pagina>&sigla=` e rolar até a seção `data-secao`.
+     A tag `a` entra na lista de permitidas, só com `class` e `data-*`. A referência não resolvida continua texto.
+   - O link pode levar a uma página fora de `sistemas:<wiki>:` (regra de outro sistema que este cita, ou página em
+     `_auxiliares`). Com a mesma `sigla`, ela abre (200).
+   - Com `entrevista=` nada muda, só os campos novos: o `html` pode trazer os links (a tela da entrevista pode ignorar o `a`).
+3. **Busca:** `GET /sistemas/{cd_sistema}/documentacao/busca?sigla=GAI&q=…&n=10&testes=0` → `[{pagina, titulo, tipo, secao,
+   trecho_html, similaridade}]`.
+   - Limites: `q` de 3 a 500 caracteres, `n` de 1 a 30, `testes` 0 ou 1. Fora disso → 422.
+   - Até 2 trechos por página. Planos de teste só com `testes=1`. Sem wiki: `[]`.
+   - `similaridade` é o cosseno (0–1; mostre em %). A ordem é a da busca, que também pesa a palavra-chave e o tipo, então nem
+     sempre fica decrescente.
+   - Na página de regras de negócio, o título vem como "Regras de negócio: RN257. Desconto de 25% para Quitação".
+   - Tempo de cerca de 1 s.
+4. **Mock:** a árvore traz UC001 e US001. As duas páginas vêm com uma seção revogada e a RN01 resolvida, cujo link abre a
+   página de regras de exemplo. A busca devolve as duas.
+CSS sugerido, além do da 1.5.4: `.sosia-ref{color:#0b5cad;cursor:pointer;text-decoration:underline dotted}`.
+
+**Novo na 1.5.5 (11/11/2026): a documentação da wiki se atualiza sozinha.** O sos-ia sincroniza o RAG com a wiki todo dia,
+de madrugada. Antes, era uma cópia de 23/10. As páginas novas e alteradas passam a aparecer na busca, nos documentos da
+entrevista e no `GET /documentacao`; as removidas dão 404. Para o SOS, só há um campo opcional novo: **`/saude`
+`wiki_atualizada_em`**, com a data e hora da última sincronização com sucesso (nula antes da 1ª). Serve para a Sustentação ver se
+a documentação está em dia. Nenhuma tela precisa mudar.
 
 **Novo na 1.5.4: documentação pronta para mostrar (`GET /documentacao`).**
 - Cada seção ganha **`html`**: o texto da wiki já formatado. As tabelas `| a | b |` (2 de cada 3 seções) viram tabela. Também

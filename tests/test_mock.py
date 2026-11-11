@@ -281,6 +281,31 @@ def test_ponto_de_partida_e_documentos_no_mock():
     assert r.status_code == 422
 
 
+def test_consulta_da_documentacao_no_mock():
+    """1.6.0: árvore, página inteira por sigla (revogada + referência resolvida em link) e busca."""
+    a = valida("ArvoreDocumentacao", c.get("/sistemas/12/documentacao", headers=H, params=dict(sigla="GAI")).json())
+    assert a["wiki"] == "gai" and [g["tipo"] for g in a["grupos"]] == ["caso_de_uso", "user_story"]
+    uc = a["grupos"][0]["paginas"][0]["pagina"]
+    d = valida("Documentacao", c.get("/documentacao", headers=H, params=dict(pagina=uc, sigla="GAI")).json())
+    assert any(s["revogada"] and s["html"].startswith("<del>") for s in d["secoes"]) and d["parcial"] is False
+    ref = next(r for s in d["secoes"] for r in s["referencias"] if r["resolvida"])
+    assert ref["codigo"] == "RN01" and f'<a class="sosia-ref" data-pagina="{ref["pagina"]}"' in d["secoes"][0]["html"]
+    regra = valida("Documentacao", c.get("/documentacao", headers=H, params=dict(pagina=ref["pagina"], sigla="GAI")).json())
+    assert regra["citada_por"]                                                # o link abre, e a regra sabe quem a cita
+    assert c.get("/documentacao", headers=H, params=dict(pagina="sistemas:gai:outra", sigla="GAI")).status_code == 404
+    for params in (dict(pagina=uc), dict(pagina=uc, sigla="GAI", entrevista="x")):     # entrevista e sigla: um dos dois
+        r = c.get("/documentacao", headers=H, params=params)
+        assert r.status_code == 422 and valida("Erro", r.json())
+    b = c.get("/sistemas/12/documentacao/busca", headers=H, params=dict(sigla="GAI", q="alienação", n=1))
+    assert b.status_code == 200 and len(b.json()) == 1
+    item = valida("ResultadoBuscaDocumentacao", b.json()[0])
+    assert item["trecho_html"].startswith("<p>") and 0 <= item["similaridade"] <= 1
+    for params in (dict(sigla="GAI", q="ab"), dict(sigla="GAI", q="abc", n=31), dict(sigla="GAI", q="abc", testes=2)):
+        assert c.get("/sistemas/12/documentacao/busca", headers=H, params=params).status_code == 422
+    assert c.get("/sistemas/12/documentacao", params=dict(sigla="GAI")).status_code == 401          # sem token
+    assert c.get("/saude").json()["versao_contrato"] == "1.6.0"
+
+
 def test_varios_pontos_no_mock():
     pts = [dict(caminho="Cadastro > Alienação", menu_id="m11", fonte="wiki"), dict(caminho="Relatório > Extrato da Alienação",
                                                                                    menu_id="m21", fonte="wiki")]
