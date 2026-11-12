@@ -1174,7 +1174,8 @@ class Motor:
             wiki = resolve_sistema(conn, sigla, cd_sistema)[1]
             if not wiki:
                 return []
-            res = busca.busca(conn, q, wiki, n=n, incluir_teste=testes, expandir=False, max_por_pagina=2)["resultados"]
+            res = busca.busca(conn, q, wiki, n=n, incluir_teste=testes, expandir=False, max_por_pagina=2,
+                              uma_por_secao=True)["resultados"]          # 2 seções por página, 1 trecho de cada
             return [ResultadoBuscaDocumentacao(
                 pagina=x["origem_dokuwiki"], tipo=x["tipo"], secao=x["secao"] or None,
                 titulo=titulo_documento(dict(tipo=x["tipo"], secao=x["secao"], titulo=x["titulo_pagina"], pagina=x["origem_dokuwiki"])),

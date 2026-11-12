@@ -155,8 +155,9 @@ def _candidatos(conn, texto, sistema, incluir_teste, so_ativos, ate_data):
     return dict(linhas=linhas, rank_v=rank_v, rank_t=rank_t, cos=cos, termos=ts, t_emb=t_emb, t_busca=time.time() - t1)
 
 
-def _seleciona(c, n, max_por_pagina, cfg=None):
-    """Parte pura: RRF x peso do tipo, no máximo `max_por_pagina` trechos por página."""
+def _seleciona(c, n, max_por_pagina, cfg=None, uma_por_secao=False):
+    """Parte pura: RRF x peso do tipo, no máximo `max_por_pagina` trechos por página. `uma_por_secao`: só o melhor trecho de
+    cada seção (seção longa vira vários trechos; sem isso, dois trechos da mesma seção ocupavam as vagas da página)."""
     linhas, rank_v, rank_t = c["linhas"], c["rank_v"], c["rank_t"]
     pt = (cfg or CFG).get("peso_texto", 1.0)
     pontuados = []
@@ -164,11 +165,16 @@ def _seleciona(c, n, max_por_pagina, cfg=None):
         rrf = (1 / (RRF_K + rank_v[i]) if i in rank_v else 0) + (pt * (1 / (RRF_K + rank_t[i])) if i in rank_t else 0)
         pontuados.append((rrf * peso_efetivo(linhas[i], cfg), i, rrf))
     pontuados.sort(reverse=True)
-    resultados, por_pagina = [], {}
+    resultados, por_pagina, secoes = [], {}, set()
     for score, i, rrf in pontuados:
         pg = linhas[i]["origem_dokuwiki"]
         if por_pagina.get(pg, 0) >= max_por_pagina:
             continue
+        if uma_por_secao:
+            k = (pg, linhas[i]["secao"] or "")
+            if k in secoes:
+                continue
+            secoes.add(k)
         por_pagina[pg] = por_pagina.get(pg, 0) + 1
         r = dict(linhas[i])
         r.update(score=score, rrf=rrf, rank_vetor=rank_v.get(i), rank_texto=rank_t.get(i), cos=c["cos"].get(i),
@@ -180,9 +186,9 @@ def _seleciona(c, n, max_por_pagina, cfg=None):
 
 
 def busca(conn, texto, sistema=None, n=8, incluir_teste=True, so_ativos=False, expandir=True, max_por_pagina=MAX_POR_PAGINA,
-          ate_data=None):
+          ate_data=None, uma_por_secao=False):
     c = _candidatos(conn, texto, sistema, incluir_teste, so_ativos, ate_data)
-    resultados = _seleciona(c, n, max_por_pagina)
+    resultados = _seleciona(c, n, max_por_pagina, uma_por_secao=uma_por_secao)
     if expandir and resultados:
         expande(conn, resultados)
     return {"resultados": resultados, "t_emb": c["t_emb"], "t_busca": c["t_busca"], "termos": c["termos"]}

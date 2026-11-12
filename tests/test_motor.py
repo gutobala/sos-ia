@@ -594,6 +594,17 @@ def test_wiki_de_alias_entra_no_sistema():
     assert any(g.tipo == "caso_de_uso" for g in a.grupos)
 
 
+def test_seleciona_uma_por_secao():
+    """Seção longa vira vários trechos: com uma_por_secao, a 2ª vaga da página vai para outra seção (pedido do SOS, 11/11)."""
+    from nucleo.rag import busca as B
+    lin = {i: dict(id=i, origem_dokuwiki=pg, secao=sec, tipo="caso_de_uso", peso=1.0)
+           for i, pg, sec in [(1, "p:uc060", "INTERFACE > Tela01"), (2, "p:uc060", "INTERFACE > Tela01"), (3, "p:uc060", "FLUXO"),
+                              (4, "p:uc012", "FLUXO")]}
+    c = dict(linhas=lin, rank_v={1: 1, 2: 2, 3: 3, 4: 4}, rank_t={}, cos={})
+    assert [r["id"] for r in B._seleciona(c, 10, 2)] == [1, 2, 4]                         # padrão: conta trechos (paridade)
+    assert [r["id"] for r in B._seleciona(c, 10, 2, uma_por_secao=True)] == [1, 3, 4]
+
+
 def test_vinculos_do_yaml(tmp_path):
     """config/wiki_sistemas.yaml: regras lidas e validadas; o Escopo gera o filtro e volta do dicionário gravado na entrevista."""
     from nucleo.rag.escopo import Escopo
@@ -690,7 +701,7 @@ def test_busca_da_documentacao_monta_a_resposta(monkeypatch):
     monkeypatch.setattr(M.busca, "busca", falsa)
     res = M.Motor().busca_documentacao(12, "GAI", "desconto quitação", n=7, testes=False)
     assert [(q, s.inteiras, kw) for q, s, kw in chamadas] == [
-        ("desconto quitação", ["gai"], dict(n=7, incluir_teste=False, expandir=False, max_por_pagina=2))]
+        ("desconto quitação", ["gai"], dict(n=7, incluir_teste=False, expandir=False, max_por_pagina=2, uma_por_secao=True))]
     assert res[0].titulo == "Regras de negócio: RN257. Desconto de 25%" and res[0].similaridade == 1.0
     assert len(res[0].trecho_html) < 1000 and res[1].similaridade == 0 and res[1].secao is None
     assert M.Motor().busca_documentacao(12, "NAO_EXISTE", "qualquer coisa") == []
