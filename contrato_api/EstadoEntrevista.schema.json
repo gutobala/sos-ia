@@ -1,5 +1,65 @@
 {
   "$defs": {
+    "AnexoLido": {
+      "additionalProperties": false,
+      "description": "1.7.0: o que a análise conseguiu ler de cada documento anexado, na ordem de NovaEntrevista.documentos.",
+      "properties": {
+        "nome": {
+          "title": "Nome",
+          "type": "string"
+        },
+        "lido": {
+          "description": "true: o texto entrou na análise",
+          "title": "Lido",
+          "type": "boolean"
+        },
+        "paginas": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "páginas do PDF; nulo para DOCX e TXT",
+          "title": "Paginas"
+        },
+        "caracteres": {
+          "default": 0,
+          "description": "caracteres do texto que entraram na análise (depois do corte)",
+          "minimum": 0,
+          "title": "Caracteres",
+          "type": "integer"
+        },
+        "cortado": {
+          "default": false,
+          "description": "true: o texto passou do teto (8.000 por documento, 15.000 no total) e só o começo entrou",
+          "title": "Cortado",
+          "type": "boolean"
+        },
+        "motivo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "por que não foi lido, para o usuário: \"sem texto (PDF digitalizado)\", \"arquivo protegido por senha\", \"arquivo corrompido\", \"arquivo sem texto\", \"só imagens (sem texto)\" (Word só com prints: sugira anexá-los como imagem), \"limite de texto dos anexos atingido\"",
+          "title": "Motivo"
+        }
+      },
+      "required": [
+        "nome",
+        "lido"
+      ],
+      "title": "AnexoLido",
+      "type": "object"
+    },
     "CandidatoFuncionalidade": {
       "additionalProperties": false,
       "description": "Função do catálogo de PF parecida com o pedido. 1.5.0: a tela do usuário não mostra mais (os nomes são os das contagens,\nnão os da tela); fica no contrato para a Sustentação.",
@@ -350,7 +410,7 @@
       "type": "string"
     },
     "versao_contrato": {
-      "default": "1.6.0",
+      "default": "1.7.0",
       "title": "Versao Contrato",
       "type": "string"
     },
@@ -443,6 +503,15 @@
       "description": "false quando a resposta veio do roteiro fixo (sem IA)",
       "title": "Analise Ia",
       "type": "boolean"
+    },
+    "anexos_lidos": {
+      "description": "1.7.0: um item por documento de NovaEntrevista.documentos; vazia sem eles",
+      "items": {
+        "$ref": "#/$defs/AnexoLido"
+      },
+      "maxItems": 3,
+      "title": "Anexos Lidos",
+      "type": "array"
     }
   },
   "required": [
@@ -457,5 +526,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/EstadoEntrevista.schema.json",
-  "x-versao-contrato": "1.6.0"
+  "x-versao-contrato": "1.7.0"
 }

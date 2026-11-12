@@ -108,7 +108,7 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
 - Cabeçalho obrigatório (menos em `/saude`): `X-SOSIA-Token: mock` (em produção: valor de `SOSIA_TOKEN`).
 - Respostas sempre `application/json; charset=utf-8`; erros sempre no formato `Erro` `{erro, detalhe}`.
 
-## Contrato da API (versão 1.6.0) — `contrato_api/`
+## Contrato da API (versão 1.7.0) — `contrato_api/`
 | Rota | Entrada | Saída |
 |---|---|---|
 | `GET /saude` | — | `Saude` (o SOS decide IA × roteiro fixo por `ok`) |
@@ -179,6 +179,26 @@ iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvi
     (`doc_html.para_html(texto, refs)`).
   - Uma página entra na wiki do sistema quando está em `sistemas:<wiki>:` ou quando o sistema alcança todos os trechos dela
     (`sistemas_acesso`). Por sigla, também abre a página de destino de um link (`motor.pagina_da_wiki`).
+- **1.7.0:** documentos anexados ao pedido (pedido `docs/sosia-1.7.0-documentos-anexados.md`).
+  - `NovaEntrevista.documentos`: até 3 PDF, DOCX ou TXT, com até 10 MB cada.
+  - Extração (`nucleo/anexos.py`):
+    - PDF pela camada de texto (`pypdf`);
+    - DOCX direto do `word/document.xml`, com parágrafos e tabelas na ordem;
+    - TXT em UTF-8, ou CP1252 como reserva.
+  - PDF digitalizado não é lido: a imagem não tem OCR de página.
+  - O que não abre volta com `lido: false` e o motivo, sem derrubar a criação.
+  - Depois, `pii.prepara_documentos`:
+    - anonimiza como o OCR das imagens (menos no modo contrato);
+    - corta em 8.000 caracteres por documento e 15.000 no total;
+    - junta ao relato como `[Texto do anexo <nome>]: …`.
+  - Com um documento lido de 300 caracteres ou mais, o gatilho `conforme_anexo` não pergunta. O nome do arquivo no marcador não
+    dispara o gatilho de arquivo.
+  - `EstadoEntrevista.anexos_lidos` vem em todas as respostas, e o evento `anexos` guarda só os metadados.
+  - Medição em 11/11/2026 com os anexos reais do SOS (`SOS_ANEXOS`), feita localmente e sem LLM:
+    - PDF: 213 de 221 lidos; 7 digitalizados e 1 corrompido;
+    - DOCX: 45 de 55 lidos; os outros 10 são Word só com prints ("só imagens (sem texto)");
+    - TXT: 18 de 18;
+    - mediana de 0,09 s por arquivo; pior caso, 4 s.
 - Máximo de 2 rodadas do LLM. **Complemento (1.3.0):** depois delas, se ainda faltar item obrigatório, a entrevista não se
   encerra: `complemento=true` e só as perguntas fixas do que falta (`roteiros.perguntas_complemento`; sem IA, sem gatilho, sem a
   decisão da regra, no máximo 5, ids `c{n}p{i}`), repetidas até completar. Evento `complemento`; `analise_ia` não muda.

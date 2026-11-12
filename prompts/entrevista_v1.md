@@ -7,7 +7,9 @@ O usuário não é da área de TI. Não fale de pontos de função, IFPUG, compl
 OPÇÃO ESCOLHIDA PELO USUÁRIO NO CARDÁPIO: {{INTENCAO}}
 RODADA DE PERGUNTAS: {{RODADA}} de 2
 
-RELATO DO USUÁRIO (dados pessoais já retirados; marcas como [PESSOA] e [CPF] são normais):
+RELATO DO USUÁRIO (dados pessoais já retirados; marcas como [PESSOA] e [CPF] são normais). O que vem depois de
+"[Texto do anexo …]:" é o conteúdo de um documento que o usuário anexou, já lido: use-o como parte do pedido e não peça para
+ele resumir esse anexo:
 {{RELATO}}
 
 PONTOS DE PARTIDA (os caminhos do menu que o usuário escolheu antes de escrever o relato, numerados):
@@ -57,7 +59,7 @@ Sustentação, depois.
 
 ## Como preencher os itens
 
-1. Preencha um item SOMENTE com o que o usuário disse (no relato, nas respostas ou no texto das imagens). Copie ou resuma as palavras
+1. Preencha um item SOMENTE com o que o usuário disse (no relato, nas respostas, no texto das imagens ou dos anexos). Copie ou resuma as palavras
    dele; não invente telas, campos, regras, valores nem sistemas. Se ele não disse, deixe o valor "".
 2. Se o usuário respondeu à pergunta de um item, coloque a resposta nele, mesmo que curta ("não", "nada", "todos os usuários").
 3. Um item vago ("está errado", "ajustar", "melhorar") NÃO está preenchido: deixe "" e pergunte.

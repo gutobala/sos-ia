@@ -36,7 +36,7 @@ from ..rag import busca, catalogo
 from ..rag.escopo import Escopo
 from . import armazem, confirmacao as cf, doc_html, roteiros
 from .mock import SLOT_PRINCIPAL
-from .modelos import (ArvoreDocumentacao, CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra,
+from .modelos import (AnexoLido, ArvoreDocumentacao, CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra,
                       DecisaoRegraDocumentada, Documentacao, Documento, EntrevistaPendente, EscopoChamado, EscopoConfirmado,
                       EscopoEditado, EstadoEntrevista, GrupoArvore, Intencao, Menus, NovaEntrevista, Origem, PaginaArvore,
                       PaginaCitante, Pergunta, ReferenciaSecao, RegraDocumentada, RequisitoContrato, Respostas,
@@ -98,6 +98,7 @@ SCHEMA_CONTRATO = {
                            "descricao": {"type": "string"}, "origem": {"type": "string", "enum": _ORIGENS}}}}}}
 MAX_OPCOES = 4          # opções de resposta da IA por pergunta (+ "Não sei informar", posto pela aplicação)
 MAX_CAR_OPCAO = 80
+RE_MARCA_ANEXO = re.compile(r"\[Texto d[ao] (?:anexo|imagem) [^\]\n]*\]:")
 
 
 # ---------------------------------------------------------------- gatilhos e sistema
@@ -525,7 +526,10 @@ def _pendentes(est):
     """Gatilhos detectados e ainda não perguntados. 1.5.3: o de integração não é perguntado ao usuário (a Sustentação responde;
     vira dúvida no contrato)."""
     fora = set(est["gatilhos_feitos"]) | gatilhos_da_sustentacao()
-    return [c for c in detecta_gatilhos(texto_do_usuario(est)) if c not in fora]
+    if pii.documento_util(est.get("anexos")):           # 1.7.0: o anexo citado foi lido; não pede para resumi-lo
+        fora.add("conforme_anexo")
+    # o nome do arquivo no marcador ("[Texto do anexo pedido.pdf]:") não é gatilho de arquivo; o conteúdo do anexo continua valendo
+    return [c for c in detecta_gatilhos(RE_MARCA_ANEXO.sub(" ", texto_do_usuario(est))) if c not in fora]
 
 
 def prompt_entrevista(est, segs):
@@ -774,7 +778,7 @@ class Motor:
             regra_documentada=RegraDocumentada.model_validate(est["regra"]) if est.get("regra") else None,
             decisao_regra=est.get("decisao"), perguntas=[Pergunta.model_validate(p) for p in est["perguntas"]],
             complemento=bool(est.get("complemento") and est["perguntas"]), nota=est["nota"], dicas_medidor=est["dicas"],
-            analise_ia=analise_ia)
+            analise_ia=analise_ia, anexos_lidos=[AnexoLido.model_validate(a) for a in est.get("anexos") or []])
 
     @staticmethod
     def _pontos(req, conn):
@@ -830,9 +834,14 @@ class Motor:
             marca("resolve_sistema_s")
             texto, imgs, notas = pii.prepara(req.relato, [i.model_dump() for i in req.imagens], conn)
             marca("pii_s")
+            anexos_lidos = []
+            if req.documentos:                                            # 1.7.0: o texto dos anexos entra no relato da análise
+                txt_docs, anexos_lidos = pii.prepara_documentos([d.model_dump() for d in req.documentos], conn)
+                texto = texto + ("\n\n" + txt_docs if txt_docs else "")
+                marca("anexos_s")
             est = dict(intencao=req.intencao.value, sigla=req.sigla, wiki=wiki.para_dict() if wiki else None, texto=texto, notas_pii=notas, rodada=1, segs=[],
                        perguntas=[], respostas=[], gatilhos_feitos=[], docs=[], candidatos=[], regra=None, decisao=None, nota=0, dicas=[],
-                       contrato=None, pontos=self._pontos(req, conn))
+                       contrato=None, pontos=self._pontos(req, conn), anexos=anexos_lidos)
             _medicao.tempos = {}
             try:
                 est["docs"], est["candidatos"] = self._busca(conn, req.intencao, sid, wiki, est)
@@ -847,6 +856,8 @@ class Motor:
                 if len(est["pontos"]) > 1:                                # 1.5.1: todos os pontos, na ordem
                     ev["pontos"] = [{k: p[k] for k in ("fonte", "menu_id")} for p in est["pontos"]]
                 armazem.evento(app, eid, 1, "ponto_partida", conteudo=ev)
+            if anexos_lidos:                                              # 1.7.0: só os metadados (sem o texto)
+                armazem.evento(app, eid, 1, "anexos", conteudo=dict(anexos=anexos_lidos))
             est["candidatos"] = self._reordena_candidatos(app, eid, est)
             marca("reordena_candidatos_s")
             ia = self._rodada(app, eid, est, imgs)

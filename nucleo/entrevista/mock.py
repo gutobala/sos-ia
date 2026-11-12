@@ -11,14 +11,18 @@ Serve para a sessão do SOS desenvolver novaAbertura.asp / entrevistaApi.asp ant
   - confirmação (1.2.0) com as mesmas regras do motor real (confirmacao.py), versões e vínculos em memória;
   - 1.5.0: GET /sistemas/{cd}/menus devolve um menu de exemplo de 2 níveis (fonte "wiki") para qualquer sistema; toda entrevista
     traz 2 documentos fixos, cujo texto sai em GET /documentacao; com `ponto_partida`, onde_ocorre / funcionalidade já vêm
-    preenchidos e não são perguntados.
+    preenchidos e não são perguntados;
+  - 1.7.0: documento cujo nome tem "digitalizado" (ou "digitalizada") volta em anexos_lidos com lido=false; os demais, lido=true com paginas=1 e
+    caracteres = tamanho do arquivo decodificado.
 """
+import base64
+import binascii
 import datetime
 import re
 import uuid
 
 from . import confirmacao as cf, doc_html, roteiros
-from .modelos import (ArvoreDocumentacao, CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra,
+from .modelos import (AnexoLido, ArvoreDocumentacao, CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra,
                       DecisaoRegraDocumentada, Documentacao, Documento, EntrevistaPendente, EscopoChamado, EscopoConfirmado,
                       EscopoEditado, EstadoEntrevista, GrupoArvore, Intencao, MenuItem, Menus, NovaEntrevista, Origem, PaginaArvore,
                       PaginaCitante, Pergunta, ReferenciaSecao, RegraDocumentada, RequisitoContrato, Respostas,
@@ -28,6 +32,21 @@ from .modelos import (ArvoreDocumentacao, CandidatoFuncionalidade, ChamadoGerado
 
 def _agora():
     return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _anexos(req):
+    """1.7.0: anexos_lidos previsíveis para a tela (sem ler o arquivo)."""
+    out = []
+    for d in req.documentos:
+        if "digitaliz" in d.nome.lower():                 # "digitalizado" ou "digitalizada"
+            out.append(AnexoLido(nome=d.nome, lido=False, paginas=1, motivo="sem texto (PDF digitalizado)"))
+            continue
+        try:
+            n = len(base64.b64decode(d.base64))
+        except (binascii.Error, ValueError):
+            n = 0
+        out.append(AnexoLido(nome=d.nome, lido=True, paginas=1, caracteres=n))
+    return out
 
 MAX_RODADAS = 2
 MAX_PERGUNTAS = 5
@@ -194,7 +213,8 @@ class MotorMock:
                                 candidatos_funcionalidade=self._candidatos(req), documentos=_documentos_exemplo(req.sigla, len(req.pontos())),
                                 regra_documentada=self._regra(req), decisao_regra=st.get("decisao"),
                                 perguntas=st["perguntas"], complemento=st["complemento"],
-                                nota=self._nota(st["segs"]), dicas_medidor=dicas, analise_ia=self.analise_ia)
+                                nota=self._nota(st["segs"]), dicas_medidor=dicas, analise_ia=self.analise_ia,
+                                anexos_lidos=_anexos(req))
 
     @staticmethod
     def _regra(req):
@@ -236,7 +256,8 @@ class MotorMock:
                                 candidatos_funcionalidade=self._candidatos(st["req"]), documentos=_documentos_exemplo(st["req"].sigla, len(st["req"].pontos())),
                                 regra_documentada=self._regra(st["req"]), decisao_regra=st.get("decisao"),
                                 perguntas=st["perguntas"], complemento=bool(st.get("complemento") and st["perguntas"]),
-                                nota=self._nota(st["segs"]), dicas_medidor=[], analise_ia=self.analise_ia)
+                                nota=self._nota(st["segs"]), dicas_medidor=[], analise_ia=self.analise_ia,
+                                anexos_lidos=_anexos(st["req"]))
 
     def responder(self, eid, resp: Respostas) -> EstadoEntrevista:
         st = self.estado[eid]

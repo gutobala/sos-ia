@@ -8,7 +8,7 @@ from typing import Annotated, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-VERSAO_CONTRATO = "1.6.0"
+VERSAO_CONTRATO = "1.7.0"
 # 1.1.0 (05/11/2026, aditiva): decisão do usuário sobre a regra documentada — POST /entrevistas/{id}/regra, campo
 #        `decisao_regra` no estado e no contrato, `regra_documentada` no contrato, slot pseudo "decisao_regra" em `faltando`.
 # 1.2.0 (05/11/2026, aditiva): confirmação do Escopo do Pedido — POST /entrevistas/{id}/confirmacao (um chamado por tipo, no
@@ -54,6 +54,9 @@ VERSAO_CONTRATO = "1.6.0"
 #        Ajuste de 11/11/2026, sem mudança de formato: a wiki de um sistema inclui as wikis dos aliases e as ligações de
 #        config/wiki_sistemas.yaml (GLP enxerga a glpv2; gai-web dividida entre GAI-WEB 803 e GFA 10006). O cd_sistema da rota
 #        passa a contar.
+# 1.7.0 (11/11/2026, aditiva; pedido docs/sosia-1.7.0-documentos-anexados.md): `NovaEntrevista.documentos` (até 3 PDF, DOCX ou
+#        TXT) — o texto é extraído, anonimizado como o OCR das imagens e entra no relato da análise; com um documento lido (300
+#        caracteres ou mais) o gatilho "conforme_anexo" não pergunta. `EstadoEntrevista.anexos_lidos` diz o que foi lido.
 
 
 class Base(BaseModel):
@@ -83,6 +86,29 @@ class Imagem(Base):
     nome: str = Field(max_length=200)
     mime: str = Field(pattern=r"^image/(png|jpeg|gif|bmp|webp)$")
     base64: str = Field(description="conteúdo da imagem em base64 (sem o prefixo data:)", max_length=7_000_000)
+
+
+class DocumentoAnexado(Base):
+    """1.7.0: documento anexado ao pedido antes da análise. O texto é lido e entra na análise; o arquivo não é guardado."""
+    nome: str = Field(max_length=200, description="nome do arquivo, como o usuário vê")
+    mime: str = Field(pattern=r"^(application/pdf|application/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|"
+                              r"text/plain)$", description="PDF, DOCX ou TXT; outros tipos: 422")
+    base64: str = Field(description="conteúdo em base64 (sem o prefixo data:); até 10 MB de arquivo", max_length=14_000_000)
+
+
+class AnexoLido(Base):
+    """1.7.0: o que a análise conseguiu ler de cada documento anexado, na ordem de NovaEntrevista.documentos."""
+    nome: str
+    lido: bool = Field(description="true: o texto entrou na análise")
+    paginas: Optional[int] = Field(default=None, description="páginas do PDF; nulo para DOCX e TXT")
+    caracteres: int = Field(default=0, ge=0, description="caracteres do texto que entraram na análise (depois do corte)")
+    cortado: bool = Field(default=False, description="true: o texto passou do teto (8.000 por documento, 15.000 no total) e "
+                                                     "só o começo entrou")
+    motivo: Optional[str] = Field(default=None, description="por que não foi lido, para o usuário: \"sem texto (PDF digitalizado)\", "
+                                                            "\"arquivo protegido por senha\", \"arquivo corrompido\", \"arquivo "
+                                                            "sem texto\", \"só imagens (sem texto)\" (Word só com prints: "
+                                                            "sugira anexá-los como imagem), \"limite de texto dos anexos "
+                                                            "atingido\"")
 
 
 class FonteMenu(str, Enum):
@@ -137,6 +163,9 @@ class NovaEntrevista(Base):
     intencao: Intencao
     relato: str = Field(min_length=10, max_length=20000, description="relato livre do usuário")
     imagens: list[Imagem] = Field(default_factory=list, max_length=5)
+    documentos: list[DocumentoAnexado] = Field(default_factory=list, max_length=3,
+                                               description="1.7.0: PDF, DOCX e TXT anexados antes da análise; o texto entra no "
+                                                           "relato (anonimizado como o OCR das imagens)")
     ponto_partida: Optional[PontoPartida] = Field(default=None, description="1.5.0: com ele, não ponha mais 'Menu: …' no relato. "
                                                                             "1.5.1: prefira pontos_partida; este vale como lista de 1")
     pontos_partida: list[PontoPartida] = Field(default_factory=list, max_length=5,
@@ -332,6 +361,8 @@ class EstadoEntrevista(Base):
     nota: int = Field(ge=0, le=100, description="medidor de qualidade do pedido")
     dicas_medidor: list[str] = Field(default_factory=list)
     analise_ia: bool = Field(description="false quando a resposta veio do roteiro fixo (sem IA)")
+    anexos_lidos: list[AnexoLido] = Field(default_factory=list, max_length=3,
+                                          description="1.7.0: um item por documento de NovaEntrevista.documentos; vazia sem eles")
 
 
 class Resposta(Base):

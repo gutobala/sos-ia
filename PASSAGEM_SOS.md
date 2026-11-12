@@ -1,9 +1,38 @@
-# sos-ia → sessão do SOS: o que mudou e o que o SOS precisa fazer (10/11/2026)
+# sos-ia → sessão do SOS: o que mudou e o que o SOS precisa fazer (11/11/2026)
 
 O serviço sos-ia (núcleo da abertura de chamados com IA) está pronto para a integração. O motor real da entrevista funciona de
-ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.6.0** (aditivo: nenhum campo ou
+ponta a ponta, e o modo mock continua disponível para desenvolver as telas. Contrato da API: **1.7.0** (aditivo: nenhum campo ou
 rota existente mudou de significado, e os campos novos de entrada são opcionais). Os JSON Schemas de cada endpoint ficam em
 `contrato_api/`, com o `openapi.json`.
+
+**Novo na 1.7.0 (11/11/2026): documentos anexados ao pedido** (pedido `docs/sosia-1.7.0-documentos-anexados.md`). Mande
+`documentos` só quando o `/saude` responder `versao_contrato` ≥ 1.7.0, porque antes disso o campo dá 422.
+1. **Entrada:** `POST /entrevistas` aceita `documentos: [{nome, mime, base64}]`, até 3.
+   - `mime`: `application/pdf`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document` ou `text/plain`.
+     Outro tipo dá 422, e mais de 3 documentos também.
+   - Cada arquivo pode ter até 10 MB (base64 de até 14.000.000 caracteres).
+2. **Leitura:**
+   - O texto é extraído, anonimizado como o OCR das imagens (o modo contrato manda como veio) e entra no relato da análise. Por
+     isso ele vale nas perguntas, na nota e no Escopo.
+   - Cada documento entra com até 8.000 caracteres, e o total é de 15.000; o que passa é cortado no fim (`cortado: true`).
+   - **PDF digitalizado não é lido:** volta com `lido: false` e o motivo "sem texto (PDF digitalizado)".
+3. **Pergunta do anexo:** com pelo menos um documento lido de 300 caracteres ou mais, a pergunta "Você citou um anexo…" não
+   aparece. Sem documento lido, ela continua.
+4. **Saída:** `EstadoEntrevista.anexos_lidos: [{nome, lido, paginas, caracteres, cortado, motivo}]` vem em criar, obter e
+   responder, na ordem dos `documentos`.
+   - `paginas` é nulo para DOCX e TXT.
+   - Os motivos possíveis são:
+     - "sem texto (PDF digitalizado)";
+     - "arquivo protegido por senha";
+     - "arquivo corrompido";
+     - "arquivo sem texto";
+     - **"só imagens (sem texto)"**: um Word só com prints colados. Sugira ao usuário anexar os prints como imagem;
+     - "limite de texto dos anexos atingido".
+5. **Mock:** um nome com "digitalizado" ou "digitalizada" volta `lido: false`. Os demais voltam `lido: true`, com `paginas: 1` e
+   `caracteres` igual ao tamanho do arquivo.
+
+O teste com 295 anexos reais do SOS (feito localmente) leu 96% dos PDF, 82% dos DOCX e todos os TXT. Os DOCX não lidos eram todos
+Word só com prints.
 
 **Novo na 1.6.0 (11/11/2026): consulta da documentação de um sistema** (pedido `docs/sosia-1.6.0-consulta-documentacao.md`).
 Só acréscimos; mostre a tela quando o `/saude` responder `versao_contrato` ≥ 1.6.0. Todas as rotas exigem o `X-SOSIA-Token`.

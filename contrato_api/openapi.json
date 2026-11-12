@@ -1353,6 +1353,64 @@
   },
   "components": {
     "schemas": {
+      "AnexoLido": {
+        "properties": {
+          "nome": {
+            "type": "string",
+            "title": "Nome"
+          },
+          "lido": {
+            "type": "boolean",
+            "title": "Lido",
+            "description": "true: o texto entrou na análise"
+          },
+          "paginas": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paginas",
+            "description": "páginas do PDF; nulo para DOCX e TXT"
+          },
+          "caracteres": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Caracteres",
+            "description": "caracteres do texto que entraram na análise (depois do corte)",
+            "default": 0
+          },
+          "cortado": {
+            "type": "boolean",
+            "title": "Cortado",
+            "description": "true: o texto passou do teto (8.000 por documento, 15.000 no total) e só o começo entrou",
+            "default": false
+          },
+          "motivo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo",
+            "description": "por que não foi lido, para o usuário: \"sem texto (PDF digitalizado)\", \"arquivo protegido por senha\", \"arquivo corrompido\", \"arquivo sem texto\", \"só imagens (sem texto)\" (Word só com prints: sugira anexá-los como imagem), \"limite de texto dos anexos atingido\""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "nome",
+          "lido"
+        ],
+        "title": "AnexoLido",
+        "description": "1.7.0: o que a análise conseguiu ler de cada documento anexado, na ordem de NovaEntrevista.documentos."
+      },
       "ArvoreDocumentacao": {
         "properties": {
           "wiki": {
@@ -1486,7 +1544,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.6.0"
+            "default": "1.7.0"
           },
           "situacao": {
             "type": "string",
@@ -1531,7 +1589,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.6.0"
+            "default": "1.7.0"
           },
           "titulo": {
             "type": "string",
@@ -1795,6 +1853,37 @@
         "title": "Documento",
         "description": "Página da wiki que o RAG achou para o pedido (1.5.0); o texto vem de GET /documentacao."
       },
+      "DocumentoAnexado": {
+        "properties": {
+          "nome": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Nome",
+            "description": "nome do arquivo, como o usuário vê"
+          },
+          "mime": {
+            "type": "string",
+            "pattern": "^(application/pdf|application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document|text/plain)$",
+            "title": "Mime",
+            "description": "PDF, DOCX ou TXT; outros tipos: 422"
+          },
+          "base64": {
+            "type": "string",
+            "maxLength": 14000000,
+            "title": "Base64",
+            "description": "conteúdo em base64 (sem o prefixo data:); até 10 MB de arquivo"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "nome",
+          "mime",
+          "base64"
+        ],
+        "title": "DocumentoAnexado",
+        "description": "1.7.0: documento anexado ao pedido antes da análise. O texto é lido e entra na análise; o arquivo não é guardado."
+      },
       "EntrevistaPendente": {
         "properties": {
           "id": {
@@ -1916,7 +2005,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.6.0"
+            "default": "1.7.0"
           },
           "situacao": {
             "type": "string",
@@ -2075,7 +2164,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.6.0"
+            "default": "1.7.0"
           },
           "rodada": {
             "type": "integer",
@@ -2164,6 +2253,15 @@
             "type": "boolean",
             "title": "Analise Ia",
             "description": "false quando a resposta veio do roteiro fixo (sem IA)"
+          },
+          "anexos_lidos": {
+            "items": {
+              "$ref": "#/components/schemas/AnexoLido"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Anexos Lidos",
+            "description": "1.7.0: um item por documento de NovaEntrevista.documentos; vazia sem eles"
           }
         },
         "additionalProperties": false,
@@ -2472,6 +2570,15 @@
             "type": "array",
             "maxItems": 5,
             "title": "Imagens"
+          },
+          "documentos": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentoAnexado"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Documentos",
+            "description": "1.7.0: PDF, DOCX e TXT anexados antes da análise; o texto entra no relato (anonimizado como o OCR das imagens)"
           },
           "ponto_partida": {
             "anyOf": [
@@ -3005,7 +3112,7 @@
           "versao_contrato": {
             "type": "string",
             "title": "Versao Contrato",
-            "default": "1.6.0"
+            "default": "1.7.0"
           },
           "mock": {
             "type": "boolean",

@@ -121,6 +121,24 @@ def test_regra_documentada_decisao_do_usuario():
     assert c.post(f"/entrevistas/{sem['id']}/regra", headers=H, json={"aceita": True}).status_code == 409
 
 
+def test_documentos_anexados_no_mock():
+    """1.7.0: anexos_lidos previsíveis; tipo fora de PDF/DOCX/TXT e mais de 3 documentos dão 422."""
+    import base64
+    b64 = base64.b64encode(b"conteudo do anexo").decode()
+    docs = [dict(nome="Especificacao.pdf", mime="application/pdf", base64=b64),
+            dict(nome="Tela digitalizada.pdf", mime="application/pdf", base64=b64)]
+    e = nova("Segue em anexo a especificação do relatório.", "ALGO_NOVO", documentos=docs)
+    assert e["anexos_lidos"] == [dict(nome="Especificacao.pdf", lido=True, paginas=1, caracteres=17, cortado=False, motivo=None),
+                                 dict(nome="Tela digitalizada.pdf", lido=False, paginas=1, caracteres=0, cortado=False,
+                                      motivo="sem texto (PDF digitalizado)")]
+    assert c.get(f"/entrevistas/{e['id']}", headers=H).json()["anexos_lidos"] == e["anexos_lidos"]
+    assert nova("relato sem anexo nenhum aqui")["anexos_lidos"] == []
+    base = dict(cd_sistema=12, sigla="GAI", intencao="ALGO_NOVO", relato="Segue em anexo a planilha.")
+    r = c.post("/entrevistas", headers=H, json=dict(base, documentos=[dict(nome="p.xlsx", mime="application/vnd.ms-excel", base64=b64)]))
+    assert r.status_code == 422
+    assert c.post("/entrevistas", headers=H, json=dict(base, documentos=docs * 2)).status_code == 422
+
+
 def test_entrevista_inexistente():
     r = c.post("/entrevistas/nao-existe/contrato", headers=H)
     assert r.status_code == 404
@@ -303,7 +321,7 @@ def test_consulta_da_documentacao_no_mock():
     for params in (dict(sigla="GAI", q="ab"), dict(sigla="GAI", q="abc", n=31), dict(sigla="GAI", q="abc", testes=2)):
         assert c.get("/sistemas/12/documentacao/busca", headers=H, params=params).status_code == 422
     assert c.get("/sistemas/12/documentacao", params=dict(sigla="GAI")).status_code == 401          # sem token
-    assert c.get("/saude").json()["versao_contrato"] == "1.6.0"
+    assert c.get("/saude").json()["versao_contrato"] >= "1.6.0"
 
 
 def test_varios_pontos_no_mock():

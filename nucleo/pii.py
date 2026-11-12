@@ -190,6 +190,44 @@ def _ocr(imagem):
     return " ".join(_cache["ocr"].readtext(base64.b64decode(imagem["base64"]), detail=0))
 
 
+MAX_DOC = 8000          # caracteres de cada documento anexado que entram no texto (1.7.0)
+MAX_DOCS = 15000        # soma de todos os documentos
+MIN_UTIL = 300          # documento lido com pelo menos isto de texto: o gatilho "conforme_anexo" não pergunta
+MIN_SOBRA = 200         # com menos que isto do teto total sobrando, o documento seguinte não entra
+
+
+def prepara_documentos(documentos=(), conn=None):
+    """Documentos anexados (1.7.0) -> (texto para juntar ao relato, anexos_lidos sem o texto).
+
+    O texto de cada documento é anonimizado como o do OCR das imagens (modos local e teste; no contrato vai como veio) e entra
+    como "[Texto do anexo <nome>]: …", até MAX_DOC caracteres por documento e MAX_DOCS no total, cortando no fim (`cortado`)."""
+    from . import anexos
+    partes, saida, resta = [], [], MAX_DOCS
+    for d in documentos:
+        x = anexos.extrai(d)
+        item = dict(nome=d["nome"], lido=x["lido"], paginas=x["paginas"], caracteres=0, cortado=False, motivo=x["motivo"])
+        if x["lido"]:
+            texto, nome = x["texto"], d["nome"]
+            if config.MODO_PII != "contrato":
+                texto, nome = anonimizar(texto, conn, max_car=len(texto) + 1000), anonimizar(nome, conn, 300)
+            teto = min(MAX_DOC, resta)
+            if teto < MIN_SOBRA:                            # o teto total já foi usado pelos anteriores
+                item.update(lido=False, motivo="limite de texto dos anexos atingido")
+            else:
+                item["cortado"] = len(texto) > teto
+                texto = texto[:teto].rstrip()
+                partes.append(f"[Texto do anexo {nome}]: {texto}" + (" […]" if item["cortado"] else ""))
+                item["caracteres"] = len(texto)
+                resta -= len(texto)
+        saida.append(item)
+    return "\n\n".join(partes), saida
+
+
+def documento_util(anexos_lidos):
+    """Algum documento lido com texto suficiente para dispensar a pergunta do anexo."""
+    return any(a["lido"] and a["caracteres"] >= MIN_UTIL for a in anexos_lidos or [])
+
+
 def prepara(texto, imagens=(), conn=None):
     """Devolve (texto para o LLM, imagens para o LLM, notas). Ver o docstring do módulo para os dois modos."""
     if config.MODO_PII == "contrato":

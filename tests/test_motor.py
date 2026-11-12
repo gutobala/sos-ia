@@ -98,6 +98,36 @@ def test_pergunta_de_gatilho_so_com_gatilho_detectado(ambiente):
     assert [p.slot for p in e.perguntas].count("gatilho") == 1                    # 1.5.3: integração não se pergunta
 
 
+def test_documento_anexado_entra_no_relato_e_dispensa_a_pergunta_do_anexo(ambiente):
+    """1.7.0: o texto do anexo (anonimizado) vai ao prompt; com ele lido, o gatilho conforme_anexo não pergunta; anexos_lidos
+    volta em criar, obter e responder. Sem documento útil, a pergunta continua."""
+    import base64
+    from nucleo.entrevista.modelos import DocumentoAnexado
+    mot, usa = ambiente
+    relato = "Segue em anexo a especificação do novo relatório de cobrança."
+    corpo = ("Relatório de cobrança por lote. Solicitante: Maria Souza, CPF 123.456.789-09. " + "Colunas: lote, valor, vencimento. " * 12)
+    docs = [DocumentoAnexado(nome="Especificacao.txt", mime="text/plain", base64=base64.b64encode(corpo.encode()).decode()),
+            DocumentoAnexado(nome="Tela digitalizada.pdf", mime="application/pdf", base64=base64.b64encode(b"nada").decode())]
+    f = usa(resp_entrevista(tipo="EVOLUTIVO_NOVO", perguntas=[(1, "gatilho", "Você citou um anexo. Resuma.")]),
+            resp_entrevista(tipo="EVOLUTIVO_NOVO"))
+    req = NovaEntrevista(cd_sistema=1, sigla="GAI", intencao=Intencao.ALGO_NOVO, relato=relato, documentos=docs)
+    e = mot.criar(req)
+    prompt = f.prompts[-1][1]
+    assert "[Texto do anexo Especificacao.txt]: Relatório de cobrança por lote" in prompt
+    assert "123.456.789-09" not in prompt and "Maria Souza" not in prompt
+    assert "gatilho" not in [p.slot for p in e.perguntas]
+    assert [(a.nome, a.lido, a.motivo) for a in e.anexos_lidos] == [("Especificacao.txt", True, None),
+                                                                    ("Tela digitalizada.pdf", False, "arquivo corrompido")]
+    assert e.anexos_lidos[0].caracteres > 300 and mot.obter(e.id).anexos_lidos == e.anexos_lidos
+    if e.perguntas:
+        r = mot.responder(e.id, Respostas(respostas=[Resposta(id=e.perguntas[0].id, texto="Por lote e por mês.")]))
+        assert r.anexos_lidos == e.anexos_lidos
+    # sem documento útil (só o que não abriu), o gatilho do anexo continua
+    usa(resp_entrevista(tipo="EVOLUTIVO_NOVO", perguntas=[(1, "gatilho", "Você citou um anexo. Resuma.")]))
+    e2 = mot.criar(NovaEntrevista(cd_sistema=1, sigla="GAI", intencao=Intencao.ALGO_NOVO, relato=relato, documentos=docs[1:]))
+    assert "gatilho" in [p.slot for p in e2.perguntas] and e2.anexos_lidos[0].lido is False
+
+
 def test_regra_documentada_so_com_trecho_do_rag_e_no_corretivo(ambiente):
     mot, usa = ambiente
     usa(resp_entrevista(regra=2, orient="Pela regra RN021, contrato com parcela paga não pode ser alterado."))

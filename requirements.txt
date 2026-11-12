@@ -8,5 +8,6 @@ openai==3.40.0
 numpy==2.5.4
 PyYAML==6.0.3
 jsonschema==4.26.0
+pypdf==7.0.1
 pytest==9.2.0
 # extras opcionais (só se SOSIA_EMB=e5 / SOSIA_PII_MODO=local com imagens): sentence-transformers, torch, easyocr

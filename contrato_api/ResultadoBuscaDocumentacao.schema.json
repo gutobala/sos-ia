@@ -51,5 +51,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/ResultadoBuscaDocumentacao.schema.json",
-  "x-versao-contrato": "1.6.0"
+  "x-versao-contrato": "1.7.0"
 }

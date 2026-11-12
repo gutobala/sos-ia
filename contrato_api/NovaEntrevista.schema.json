@@ -1,5 +1,36 @@
 {
   "$defs": {
+    "DocumentoAnexado": {
+      "additionalProperties": false,
+      "description": "1.7.0: documento anexado ao pedido antes da análise. O texto é lido e entra na análise; o arquivo não é guardado.",
+      "properties": {
+        "nome": {
+          "description": "nome do arquivo, como o usuário vê",
+          "maxLength": 200,
+          "title": "Nome",
+          "type": "string"
+        },
+        "mime": {
+          "description": "PDF, DOCX ou TXT; outros tipos: 422",
+          "pattern": "^(application/pdf|application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document|text/plain)$",
+          "title": "Mime",
+          "type": "string"
+        },
+        "base64": {
+          "description": "conteúdo em base64 (sem o prefixo data:); até 10 MB de arquivo",
+          "maxLength": 14000000,
+          "title": "Base64",
+          "type": "string"
+        }
+      },
+      "required": [
+        "nome",
+        "mime",
+        "base64"
+      ],
+      "title": "DocumentoAnexado",
+      "type": "object"
+    },
     "FontePontoPartida": {
       "enum": [
         "fgca",
@@ -132,6 +163,15 @@
       "title": "Imagens",
       "type": "array"
     },
+    "documentos": {
+      "description": "1.7.0: PDF, DOCX e TXT anexados antes da análise; o texto entra no relato (anonimizado como o OCR das imagens)",
+      "items": {
+        "$ref": "#/$defs/DocumentoAnexado"
+      },
+      "maxItems": 3,
+      "title": "Documentos",
+      "type": "array"
+    },
     "ponto_partida": {
       "anyOf": [
         {
@@ -164,5 +204,5 @@
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sos-ia/NovaEntrevista.schema.json",
-  "x-versao-contrato": "1.6.0"
+  "x-versao-contrato": "1.7.0"
 }
