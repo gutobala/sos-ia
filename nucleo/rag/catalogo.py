@@ -16,6 +16,7 @@ import re
 import unicodedata
 
 from .. import config, embeddings, llm
+from . import busca
 from .busca import RRF_K
 
 PROFUNDIDADE = 30       # candidatos de cada lista e os que vão para a reordenação
@@ -82,12 +83,13 @@ def wiki_paginas(conn, sistema, dt, consultas, k=60, n_paginas=10):
     embs = [embeddings.consulta_sql(q) for q in consultas]
     _hnsw(conn)
     esc = collections.defaultdict(float)
+    fs, ps = busca.filtro_sistema(sistema)
     for v in embs:
         rows = conn.execute(
             f"""SELECT titulo_pagina, origem_dokuwiki, 1 - ({col} <=> %(v)s::vector) cos FROM apf.conhecimento_trecho
-               WHERE {col} IS NOT NULL AND %(s)s = ANY(sistemas_acesso) AND tipo <> 'plano_de_teste'
+               WHERE {col} IS NOT NULL AND {fs} AND tipo <> 'plano_de_teste'
                  AND (dt_pagina_criada IS NULL OR dt_pagina_criada < %(d)s::date)
-               ORDER BY {col} <=> %(v)s::vector LIMIT %(k)s""", dict(v=v, s=sistema, d=dt, k=k)).fetchall()
+               ORDER BY {col} <=> %(v)s::vector LIMIT %(k)s""", dict(ps, v=v, d=dt, k=k)).fetchall()
         vistos = []
         for r in rows:
             if r["origem_dokuwiki"] not in [o for o, _ in vistos]:
@@ -103,11 +105,12 @@ def wiki_trechos(conn, sistema, dt, texto, k=4, max_car=900):
         return []
     col = embeddings.coluna_rag()
     _hnsw(conn)
+    fs, ps = busca.filtro_sistema(sistema)
     rows = conn.execute(
         f"""SELECT titulo_pagina, origem_dokuwiki, secao, texto FROM apf.conhecimento_trecho
-           WHERE {col} IS NOT NULL AND %(s)s = ANY(sistemas_acesso) AND tipo <> 'plano_de_teste'
+           WHERE {col} IS NOT NULL AND {fs} AND tipo <> 'plano_de_teste'
              AND (dt_pagina_criada IS NULL OR dt_pagina_criada < %(d)s::date)
-           ORDER BY {col} <=> %(v)s::vector LIMIT %(k)s""", dict(s=sistema, d=dt, v=embeddings.consulta_sql(texto), k=k * 4)).fetchall()
+           ORDER BY {col} <=> %(v)s::vector LIMIT %(k)s""", dict(ps, d=dt, v=embeddings.consulta_sql(texto), k=k * 4)).fetchall()
     out, vistas = [], set()
     for r in rows:
         if r["origem_dokuwiki"] in vistas:

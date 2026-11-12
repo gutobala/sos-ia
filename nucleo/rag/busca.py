@@ -6,6 +6,7 @@ import re
 import time
 
 from .. import embeddings
+from .escopo import Escopo
 
 K_CANDIDATOS = 60       # candidatos de cada busca (vetorial e textual) antes da fusão
 RRF_K = 60
@@ -15,6 +16,12 @@ MAX_EXPANSAO_CAR = 900  # por referência
 
 def embedding_consulta(texto):
     return embeddings.consulta_sql(texto)
+
+
+def filtro_sistema(sistema, prefixo="", por_dono=False):
+    """(SQL, parâmetros) do filtro de wiki: `sistema` é uma chave ("gai"), uma lista de chaves ou um Escopo
+    (motor.resolve_sistema; ver escopo.py)."""
+    return Escopo.de(sistema).filtro(prefixo, por_dono)
 
 
 def termos(texto):
@@ -105,8 +112,9 @@ def _candidatos(conn, texto, sistema, incluir_teste, so_ativos, ate_data):
     col = embeddings.coluna_rag()
     filtro, par = [f"{col} IS NOT NULL"], {"v": v, "k": K_CANDIDATOS}
     if sistema:
-        filtro.append("%(sis)s = ANY(sistemas_acesso)")
-        par["sis"] = sistema
+        sql, p = filtro_sistema(sistema)
+        filtro.append(sql)
+        par.update(p)
     if not incluir_teste:
         filtro.append("tipo <> 'plano_de_teste'")
     if ate_data:                          # só páginas criadas antes do dia do chamado
@@ -229,8 +237,9 @@ def paginas_por_titulo(conn, termos_ex, sistema, incluir_teste, ate_data=None):
         return []
     filtro, par = ["tipo NOT IN ('indice')"], {}
     if sistema:
-        filtro.append("%(sis)s = ANY(sistemas_acesso)")
-        par["sis"] = sistema
+        sql, p = filtro_sistema(sistema)
+        filtro.append(sql)
+        par.update(p)
     if not incluir_teste:
         filtro.append("tipo <> 'plano_de_teste'")
     if ate_data:                          # só páginas criadas antes do dia do chamado
@@ -266,9 +275,10 @@ def citantes(conn, ids_aux, sistema, ate_data):
         return {}
     filtro, par = ["c.destino_trecho_id = ANY(%(ids)s)", "o.tipo IN ('caso_de_uso', 'user_story', 'documento')",
                    f"o.{embeddings.coluna_rag()} IS NOT NULL"], {"ids": list(ids_aux)}
-    if sistema:
-        filtro.append("o.sistema = %(sis)s")
-        par["sis"] = sistema
+    if sistema:                           # páginas da própria wiki (coluna sistema), como antes
+        sql, p = filtro_sistema(sistema, "o.", por_dono=True)
+        filtro.append(sql)
+        par.update(p)
     if ate_data:
         filtro.append("(o.dt_pagina_criada IS NULL OR o.dt_pagina_criada < %(ate)s::date)")
         par["ate"] = ate_data

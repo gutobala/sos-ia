@@ -33,6 +33,7 @@ from .. import config, embeddings, llm, pii
 from .. import db as dbm
 from ..menus import catalogo as menus_catalogo
 from ..rag import busca, catalogo
+from ..rag.escopo import Escopo
 from . import armazem, confirmacao as cf, doc_html, roteiros
 from .mock import SLOT_PRINCIPAL
 from .modelos import (ArvoreDocumentacao, CandidatoFuncionalidade, ChamadoGerado, Confirmacao, Contrato, DecisaoRegra,
@@ -49,6 +50,7 @@ MAX_CANDIDATOS = 5      # funcionalidades mostradas (de 30 da fusão, reordenada
 PROMPT_ENTREVISTA = os.path.join(config.RAIZ, "prompts", "entrevista_v1.md")
 PROMPT_CONTRATO = os.path.join(config.RAIZ, "prompts", "contrato_v1.md")
 ARQ_GATILHOS = os.path.join(config.RAIZ, "config", "gatilhos.yaml")
+ARQ_WIKI_SISTEMAS = os.path.join(config.RAIZ, "config", "wiki_sistemas.yaml")
 TIPOS_REGRA = ("regras_de_negocio", "mensagens", "caso_de_uso")
 TIPOS_DOCUMENTO = ("caso_de_uso", "user_story", "regras_de_negocio")     # 1.5.0: o que o usuário pode ler no SOS
 MAX_DOCUMENTOS = 5           # por ponto de partida (1.5.1)
@@ -130,21 +132,82 @@ def texto_do_usuario(est):
     return est["texto"] + "\n" + "\n".join(r["resposta"] for r in est["respostas"])
 
 
-def resolve_sistema(conn, sigla):
-    """(sistema_id, chave da wiki) pela sigla do SOS (ou alias). Chave da wiki = sigla minúscula com '_' no lugar de '-'."""
+def resolve_sistema(conn, sigla, cd_sistema=None):
+    """(sistema_id, Escopo da wiki ou None) pela sigla do SOS (ou alias) e, quando houver, pelo CD_SISTEMA do SOS.
+
+    Ligação automática: as wikis cujo nome, sem pontuação, é a sigla oficial ou um alias do sistema (o GLP tem a `glp`, 5 páginas
+    do sistema antigo, e a `glpv2`, alias GLPV2, 295 páginas). A maior wiki vem primeiro. Por cima dela, config/wiki_sistemas.yaml:
+    wikis a ignorar, wikis somadas ao sistema e wikis divididas por página (gai-web: GAI-WEB 803 x GFA 10006). A entrada do yaml
+    é achada pelo `cd` e, sem ele, pela sigla. Resultado em cache até a sincronização da wiki limpar as chaves ("wiki", …)."""
+    ck = ("wiki", "resolve", (sigla or "").strip().upper(), cd_sistema)
+    if ck in _cache:
+        return _cache[ck]
     r = conn.execute("""SELECT id, sigla FROM apf.sistema WHERE upper(sigla) = upper(%s)
                         UNION ALL SELECT s.id, s.sigla FROM apf.sistema_alias a JOIN apf.sistema s ON s.id = a.sistema_id
                         WHERE upper(a.alias) = upper(%s) LIMIT 1""", (sigla, sigla)).fetchone()
-    base = (r["sigla"] if r else sigla).lower().replace("-", "_").replace(" ", "_")
-    chave = base if _tem_wiki(conn, base) else None
-    return (r["id"] if r else None), chave
+    nomes = [r["sigla"] if r else sigla]
+    if r:
+        nomes += [a["alias"] for a in conn.execute("SELECT alias FROM apf.sistema_alias WHERE sistema_id = %s", (r["id"],))]
+    alvo = {_sem_pontuacao(n) for n in nomes}
+    vinc = vinculos_wiki()
+    ent = (next((e for e in vinc["sistemas"] if cd_sistema is not None and e["cd"] == cd_sistema), None)
+           or next((e for e in vinc["sistemas"] if e["sigla"] in {_sem_pontuacao(sigla), _sem_pontuacao(nomes[0])}), None)
+           or dict(wikis=[], paginas=[]))
+    wikis = _wikis(conn)
+    divididas = {k for k, _, _ in ent["paginas"]}
+    inteiras = {k for k in wikis if _sem_pontuacao(k) in alvo and k not in vinc["ignorar"]}
+    inteiras = (inteiras | {k for k in ent["wikis"] if k in wikis}) - divididas
+    base = nomes[0].lower().replace("-", "_").replace(" ", "_")
+    parciais = [p for p in ent["paginas"] if p[0] in wikis]
+    esc = None
+    if inteiras or parciais:
+        esc = Escopo(sorted(inteiras, key=lambda k: (-wikis[k], k != base, k)), parciais, _citados(conn, parciais))
+    _cache[ck] = (r["id"] if r else None), esc
+    return _cache[ck]
 
 
-def _tem_wiki(conn, chave):
-    k = ("wiki", chave)
+def vinculos_wiki(arquivo=None):
+    """config/wiki_sistemas.yaml -> {ignorar: set, sistemas: [{sigla (sem pontuação), cd, wikis, paginas: [(wiki, regex, incluir)]}]}."""
+    arquivo = arquivo or ARQ_WIKI_SISTEMAS
+    k = ("wiki", "yaml", arquivo)
     if k not in _cache:
-        _cache[k] = conn.execute("SELECT EXISTS (SELECT 1 FROM apf.conhecimento_trecho WHERE %s = ANY(sistemas_acesso))",
-                                 (chave,)).fetchone()["exists"]
+        d = (yaml.safe_load(open(arquivo, encoding="utf-8")) if os.path.exists(arquivo) else None) or {}
+        sistemas = []
+        for sigla, e in (d.get("sistemas") or {}).items():
+            e = e or {}
+            paginas = []
+            for w, regra in (e.get("paginas") or {}).items():
+                if len(regra or {}) != 1 or not set(regra) <= {"so", "exceto"}:
+                    raise ValueError(f"{arquivo}: {sigla}.paginas.{w} precisa de 'so' ou 'exceto'")
+                ((tipo, rx),) = regra.items()
+                re.compile(rx)
+                paginas.append((w, rx, tipo == "so"))
+            sistemas.append(dict(sigla=_sem_pontuacao(str(sigla)), cd=e.get("cd"), wikis=list(e.get("wikis") or []), paginas=paginas))
+        _cache[k] = dict(ignorar=set(d.get("ignorar") or []), sistemas=sistemas)
+    return _cache[k]
+
+
+def _citados(conn, parciais):
+    """Trechos que as páginas das wikis divididas citam (mensagens e regras da mesma wiki): entram no escopo por id."""
+    ids = set()
+    for k, rx, incluir in parciais:
+        ids |= {r["d"] for r in conn.execute(
+            """SELECT DISTINCT r.destino_trecho_id AS d FROM apf.conhecimento_referencia r
+               JOIN apf.conhecimento_trecho o ON o.id = r.origem_trecho_id
+               WHERE r.destino_trecho_id IS NOT NULL AND o.sistema = %s AND (o.origem_dokuwiki ~ %s) = %s""", (k, rx, incluir))}
+    return sorted(ids)
+
+
+def _sem_pontuacao(nome):
+    return re.sub(r"[^a-z0-9]", "", (nome or "").lower())
+
+
+def _wikis(conn):
+    """{chave da wiki: páginas}. Fica em cache até a sincronização da wiki limpar as chaves ("wiki", …)."""
+    k = ("wiki", "chaves")
+    if k not in _cache:
+        _cache[k] = {r["sistema"]: r["n"] for r in conn.execute(
+            "SELECT sistema, count(DISTINCT origem_dokuwiki) AS n FROM apf.conhecimento_trecho WHERE sistema IS NOT NULL GROUP BY sistema")}
     return _cache[k]
 
 
@@ -176,11 +239,12 @@ def rag(conn, intencao, sistema_id, wiki, texto, com_catalogo=True):
         if intencao == Intencao.PAROU_DE_FUNCIONAR:      # a busca híbrida rebaixa RN/mensagens; aqui elas são o que interessa
             col = embeddings.coluna_rag()
             vistos = {d["pagina"] + "|" + (d["secao"] or "") for d in docs}
+            fs, ps = busca.filtro_sistema(wiki)
             for x in conn.execute(
                     f"""SELECT origem_dokuwiki, titulo_pagina, secao, tipo, texto, 1 - ({col} <=> %(v)s::vector) cos
-                        FROM apf.conhecimento_trecho WHERE {col} IS NOT NULL AND %(s)s = ANY(sistemas_acesso)
+                        FROM apf.conhecimento_trecho WHERE {col} IS NOT NULL AND {fs}
                           AND tipo IN ('regras_de_negocio', 'mensagens')
-                        ORDER BY {col} <=> %(v)s::vector LIMIT 3""", dict(v=embeddings.consulta_sql(q), s=wiki)).fetchall():
+                        ORDER BY {col} <=> %(v)s::vector LIMIT 3""", dict(ps, v=embeddings.consulta_sql(q))).fetchall():
                 if x["origem_dokuwiki"] + "|" + (x["secao"] or "") not in vistos:
                     docs.append(dict(pagina=x["origem_dokuwiki"], titulo=x["titulo_pagina"], secao=x["secao"], tipo=x["tipo"],
                                      texto=(x["texto"] or "")[:700], cos=round(float(x["cos"]), 3)))
@@ -248,29 +312,37 @@ def chave_natural(t):
 
 def pagina_da_wiki(conn, pagina, wiki):
     """A página pertence à wiki do sistema: está em `sistemas:<wiki>:…` ou algum trecho dela é acessível pelo sistema (página
-    em _auxiliares de outro nome, ou regra de outro sistema que este cita: é para onde levam os links das referências)."""
-    if pagina.startswith(f"sistemas:{wiki}:"):
+    em _auxiliares de outro nome, ou regra de outro sistema que este cita: é para onde levam os links das referências).
+    `wiki`: o Escopo de resolve_sistema (ou uma chave / lista de chaves). Numa wiki dividida (gai-web), só as páginas do sistema e
+    as que elas citam."""
+    esc = Escopo.de(wiki)
+    if any(pagina.startswith(p) for p in esc.prefixos) or esc.tem_pagina_parcial(pagina):
         return True
-    return conn.execute("SELECT EXISTS (SELECT 1 FROM apf.conhecimento_trecho WHERE origem_dokuwiki = %s AND %s = ANY(sistemas_acesso)) "
-                        "AS ok", (pagina, wiki)).fetchone()["ok"]
+    fs, ps = esc.filtro()
+    return conn.execute(f"SELECT EXISTS (SELECT 1 FROM apf.conhecimento_trecho WHERE origem_dokuwiki = %(pg)s AND {fs}) AS ok",
+                        dict(ps, pg=pagina)).fetchone()["ok"]
 
 
 def arvore_documentacao(conn, wiki):
     """Grupos de páginas da wiki do sistema (1.6.0): as páginas `sistemas:<wiki>:…` e as que o sistema alcança inteiras
-    (sistemas_acesso em todos os trechos, como as de _auxiliares). Só a versão mais recente de cada página."""
+    (sistemas_acesso em todos os trechos, como as de _auxiliares). Só a versão mais recente de cada página.
+    `wiki`: o Escopo de resolve_sistema (ou uma chave / lista de chaves); a wiki principal dá o nome e o título."""
+    esc = Escopo.de(wiki)
+    ks = [esc.principal] + [k for k in esc.inteiras if k != esc.principal]
+    fs, par = esc.filtro()
     rows = conn.execute(
         f"""WITH p AS (SELECT origem_dokuwiki, max(data_versao) AS v FROM apf.conhecimento_trecho t
                        GROUP BY origem_dokuwiki
-                       HAVING bool_or(origem_dokuwiki LIKE %(pref)s) OR bool_and(%(w)s = ANY(sistemas_acesso)))
+                       HAVING bool_or(origem_dokuwiki LIKE ANY(%(pref)s::text[])) OR bool_and({fs}))
             SELECT t.origem_dokuwiki AS pagina, max(t.tipo) AS tipo, max(t.titulo_pagina) AS titulo,
                    count(*) FILTER (WHERE NOT {SQL_RISCADO} AND btrim(t.texto) <> '') AS secoes,
                    bool_and({SQL_RISCADO}) AS revogada
             FROM apf.conhecimento_trecho t JOIN p ON p.origem_dokuwiki = t.origem_dokuwiki AND t.data_versao = p.v
-            GROUP BY t.origem_dokuwiki""", dict(pref=f"sistemas:{wiki}:%", w=wiki)).fetchall()
-    inicio = f"sistemas:{wiki}:inicio"
+            GROUP BY t.origem_dokuwiki""", dict(par, pref=[p + "%" for p in esc.prefixos])).fetchall()
+    inicios = [f"sistemas:{k}:inicio" for k in ks]
     por = {}
     for r in rows:
-        tipo = "inicio" if r["pagina"] == inicio else r["tipo"]
+        tipo = "inicio" if r["pagina"] in inicios else r["tipo"]
         por.setdefault(tipo, []).append(PaginaArvore(pagina=r["pagina"], titulo=r["titulo"] or r["pagina"], secoes=r["secoes"],
                                                      revogada=bool(r["revogada"])))
     conhecidos = {t for t, _ in GRUPOS_DOC}
@@ -278,8 +350,9 @@ def arvore_documentacao(conn, wiki):
               for t, nome in GRUPOS_DOC if por.get(t)]
     grupos += [GrupoArvore(tipo=t, titulo=t.replace("_", " ").capitalize(), paginas=sorted(ps, key=lambda p: chave_natural(p.titulo)))
                for t, ps in sorted(por.items()) if t not in conhecidos]
-    titulo = next((p.titulo for g in grupos if g.tipo == "inicio" for p in g.paginas), None)
-    return ArvoreDocumentacao(wiki=wiki, titulo=titulo or wiki.upper(), grupos=grupos)
+    tit = {p.pagina: p.titulo for g in grupos if g.tipo == "inicio" for p in g.paginas}
+    titulo = next((tit[i] for i in inicios if i in tit), None)
+    return ArvoreDocumentacao(wiki=ks[0], titulo=titulo or ks[0].upper(), grupos=grupos)
 
 
 def referencias_das_secoes(conn, ids):
@@ -753,11 +826,11 @@ class Motor:
         try:
             app = self.conectar_app()
             marca("conexoes_s")
-            sid, wiki = resolve_sistema(conn, req.sigla)
+            sid, wiki = resolve_sistema(conn, req.sigla, req.cd_sistema)
             marca("resolve_sistema_s")
             texto, imgs, notas = pii.prepara(req.relato, [i.model_dump() for i in req.imagens], conn)
             marca("pii_s")
-            est = dict(intencao=req.intencao.value, sigla=req.sigla, wiki=wiki, texto=texto, notas_pii=notas, rodada=1, segs=[],
+            est = dict(intencao=req.intencao.value, sigla=req.sigla, wiki=wiki.para_dict() if wiki else None, texto=texto, notas_pii=notas, rodada=1, segs=[],
                        perguntas=[], respostas=[], gatilhos_feitos=[], docs=[], candidatos=[], regra=None, decisao=None, nota=0, dicas=[],
                        contrato=None, pontos=self._pontos(req, conn))
             _medicao.tempos = {}
@@ -1051,11 +1124,12 @@ class Motor:
                 if not wiki or not pagina_da_wiki(conn, pagina, wiki):
                     raise KeyError(pagina)
             else:
-                _, est = self._carrega(app, eid)
-                wiki = est.get("wiki", "")
+                row, est = self._carrega(app, eid)
+                wiki = est.get("wiki", "")                          # texto (até 1.6.0), lista ou dicionário do Escopo
                 if "wiki" not in est:                               # entrevista anterior à 1.5.0
-                    wiki = resolve_sistema(conn, est["sigla"])[1]
-                if not wiki or not pagina.startswith(f"sistemas:{wiki}:"):
+                    wiki = resolve_sistema(conn, est["sigla"], row.get("cd_sistema"))[1]
+                # a mesma regra da sigla: a wiki do GLPv2 está em sistemas:glpweb:…, fora do prefixo sistemas:glpv2:
+                if not wiki or not pagina_da_wiki(conn, pagina, wiki):
                     raise KeyError(pagina)
             rows = conn.execute(
                 """SELECT id, titulo_pagina, tipo, secao, texto FROM apf.conhecimento_trecho
@@ -1088,7 +1162,7 @@ class Motor:
         """1.6.0: páginas da wiki do sistema, agrupadas por tipo. Sem wiki (ou sigla desconhecida): wiki nula e sem grupos."""
         conn = self.conectar()
         try:
-            wiki = resolve_sistema(conn, sigla)[1]
+            wiki = resolve_sistema(conn, sigla, cd_sistema)[1]
             return arvore_documentacao(conn, wiki) if wiki else ArvoreDocumentacao()
         finally:
             conn.close()
@@ -1097,7 +1171,7 @@ class Motor:
         """1.6.0: a busca híbrida da entrevista (busca.busca) na wiki do sistema, até 2 trechos por página. Sem wiki: []."""
         conn = self.conectar()
         try:
-            wiki = resolve_sistema(conn, sigla)[1]
+            wiki = resolve_sistema(conn, sigla, cd_sistema)[1]
             if not wiki:
                 return []
             res = busca.busca(conn, q, wiki, n=n, incluir_teste=testes, expandir=False, max_por_pagina=2)["resultados"]

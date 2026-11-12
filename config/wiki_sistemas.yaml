@@ -1,0 +1,30 @@
+# Ligação wiki -> sistema do SOS, além da automática (wiki cujo nome, sem pontuação, é a sigla ou um alias do sistema).
+# Decidido pelo usuário em 11/11/2026. Lido por nucleo/entrevista/motor.py (resolve_sistema). Mudou aqui: rebuild da api.
+#
+# ignorar   wikis que não valem para nenhum sistema (nem pela ligação automática)
+# sistemas  chave = sigla do SOS (comparada sem pontuação); cd = CD_SISTEMA do SOS (quando conhecido, vale antes da sigla)
+#   wikis     wikis inteiras somadas ao sistema
+#   paginas   {wiki: {so: regex}} só as páginas cujo id casa; {wiki: {exceto: regex}} todas menos essas.
+#             A wiki em `paginas` não entra inteira, nem pela ligação automática.
+
+ignorar:
+  - gso       # documentação do GSO antigo, na parte de sistemas inativos
+  - gfov3     # nova versão do GFOv2, descontinuada
+  - gecv2     # nova versão do GEC, descontinuada
+  - gacv2     # sem sistema
+
+sistemas:
+  # GSO - Gestão de Serviços Online: front-end do cliente externo, backend e a interface interna dos empregados
+  GSO:          {wikis: [portal_do_cliente, gsov2, portal_interno]}
+  GSOV2:        {wikis: [portal_do_cliente, gsov2, portal_interno]}
+  GESTAO-RISCO: {wikis: [gr]}
+  GPAV2:        {wikis: [gpa2]}
+  GAVV2:        {wikis: [novogav]}
+  # A wiki gai-web mistura dois sistemas: UC001–UC003 são do GAI-WEB (em produção, PHP 5.2); da UC004 em diante, do GFA
+  # (substituto do GAI Forms, em desenvolvimento).
+  GAI-WEB:
+    cd: 803
+    paginas: {gai-web: {so: '^sistemas:gai-web:documentacao_tecnica:caso_de_uso:uc00[123]:'}}
+  GFA:
+    cd: 10006
+    paginas: {gai-web: {exceto: '^sistemas:gai-web:documentacao_tecnica:caso_de_uso:uc00[123]:'}}

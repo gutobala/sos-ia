@@ -51,6 +51,9 @@ VERSAO_CONTRATO = "1.6.0"
 #        da entrevista — GET /sistemas/{cd}/documentacao (árvore), GET /documentacao?pagina=…&sigla= (página inteira, com as
 #        revogadas), GET /sistemas/{cd}/documentacao/busca (busca híbrida). Campos novos: SecaoDocumentacao.revogada e
 #        .referencias, Documentacao.citada_por; no html, referência resolvida vira <a class="sosia-ref" data-*>.
+#        Ajuste de 11/11/2026, sem mudança de formato: a wiki de um sistema inclui as wikis dos aliases e as ligações de
+#        config/wiki_sistemas.yaml (GLP enxerga a glpv2; gai-web dividida entre GAI-WEB 803 e GFA 10006). O cd_sistema da rota
+#        passa a contar.
 
 
 class Base(BaseModel):

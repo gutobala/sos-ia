@@ -575,6 +575,81 @@ def test_arvore_da_documentacao_do_sistema():
     assert vazia.wiki is None and vazia.grupos == []
 
 
+def test_wiki_de_alias_entra_no_sistema():
+    """O GLP tem a wiki `glp` (5 páginas, sistema antigo) e a `glpv2` (alias GLPV2; páginas em sistemas:glpweb:…). As duas
+    entram, a maior primeiro; o E-SOCIAL não tem wiki com o nome da sigla, só as dos aliases ESOCIAL e E-SOCIAL_V2."""
+    with db.db() as c:
+        _, glp = M.resolve_sistema(c, "GLP")
+        _, esocial = M.resolve_sistema(c, "E-SOCIAL")
+        _, gai = M.resolve_sistema(c, "GAI")
+        assert M.resolve_sistema(c, "glpv2") == M.resolve_sistema(c, "GLP")
+        assert glp.inteiras[0] == "glpv2" and "glp" in glp.inteiras and not glp.parciais
+        assert {"esocial", "esocial_v2"} <= set(esocial.inteiras) and gai.inteiras == ["gai"]
+        cauc = c.execute("""SELECT origem_dokuwiki p FROM apf.conhecimento_trecho WHERE origem_dokuwiki LIKE 'sistemas:glpweb:%%'
+                            AND tipo = 'caso_de_uso' AND tsv @@ to_tsquery('portuguese', 'caução') LIMIT 1""").fetchone()["p"]
+        assert M.pagina_da_wiki(c, cauc, glp) and not M.pagina_da_wiki(c, cauc, ["glp"])
+    a = M.Motor().arvore_documentacao(46, "GLP")
+    paginas = {p.pagina for g in a.grupos for p in g.paginas}
+    assert a.wiki == "glpv2" and cauc in paginas and "sistemas:glp:inicio" in paginas
+    assert any(g.tipo == "caso_de_uso" for g in a.grupos)
+
+
+def test_vinculos_do_yaml(tmp_path):
+    """config/wiki_sistemas.yaml: regras lidas e validadas; o Escopo gera o filtro e volta do dicionário gravado na entrevista."""
+    from nucleo.rag.escopo import Escopo
+    v = M.vinculos_wiki()
+    assert {"gso", "gfov3", "gecv2", "gacv2"} <= v["ignorar"]
+    por = {e["sigla"]: e for e in v["sistemas"]}
+    assert por["gaiweb"]["cd"] == 803 and por["gfa"]["cd"] == 10006 and por["gestaorisco"]["wikis"] == ["gr"]
+    assert por["gaiweb"]["paginas"][0][2] is True and por["gfa"]["paginas"][0][2] is False
+    ruim = tmp_path / "ruim.yaml"
+    ruim.write_text("sistemas:\n  X: {paginas: {w: {talvez: 'a'}}}\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        M.vinculos_wiki(str(ruim))
+    e = Escopo(["gso2", "x"], [("w", "^a", True)], [7])
+    sql, par = e.filtro("o.")
+    assert sql == ("(o.sistemas_acesso && %(wk_i)s::text[] OR (o.sistema = %(wk_k0)s AND (o.origem_dokuwiki ~ %(wk_r0)s) = %(wk_s0)s)"
+                   " OR o.id = ANY(%(wk_c)s))")
+    assert par == dict(wk_i=["gso2", "x"], wk_k0="w", wk_r0="^a", wk_s0=True, wk_c=[7])
+    assert e.filtro(por_dono=True)[0].startswith("(sistema = ANY(%(wk_i)s)")
+    assert Escopo.de(e.para_dict()) == e and Escopo.de("gai") == Escopo(["gai"]) and Escopo.de(None) is None
+    assert Escopo([], [("w", "^sistemas:w:uc1", True)]).tem_pagina_parcial("sistemas:w:uc1:inicio")
+    assert not Escopo([], [("w", "^sistemas:w:uc1", False)]).tem_pagina_parcial("sistemas:w:uc1:inicio")
+
+
+def test_ligacoes_do_yaml_no_banco():
+    """GSO/GSOV2 com as 3 wikis do Serviços Online e sem a gso inativa; gai-web dividida entre GAI-WEB (803) e GFA (10006);
+    gr no GESTAO-RISCO; wikis descontinuadas fora de tudo."""
+    uc = "sistemas:gai-web:documentacao_tecnica:caso_de_uso:uc00{}:inicio"
+    with db.db() as c:
+        for sigla in ("GSO", "GSOV2"):
+            esc = M.resolve_sistema(c, sigla)[1]
+            assert set(esc.inteiras) == {"portal_do_cliente", "gsov2", "portal_interno"}
+        assert M.resolve_sistema(c, "GESTAO-RISCO")[1].inteiras == ["gr"]
+        assert M.resolve_sistema(c, "GPAV2")[1].inteiras == ["gpa2"]
+        assert "novogav" in M.resolve_sistema(c, "GAVV2")[1].inteiras
+        for sigla in ("GFOV3", "GECV2", "GACV2"):
+            assert M.resolve_sistema(c, sigla)[1] is None
+        gw = M.resolve_sistema(c, "GAI-WEB")[1]
+        assert gw == M.resolve_sistema(c, "OUTRA-GRAFIA", 803)[1] == M.resolve_sistema(c, "GAI-WEB", 803)[1]
+        assert gw.inteiras == [] and gw.citados
+        msg = "sistemas:gai-web:documentacao_tecnica:mensagens:inicio"
+        assert M.pagina_da_wiki(c, msg, gw) and M.pagina_da_wiki(c, uc.format(1), gw)
+        assert not M.pagina_da_wiki(c, uc.format(4), gw)
+        gfa = M.resolve_sistema(c, "GFA", 10006)[1]
+        assert M.pagina_da_wiki(c, uc.format(4), gfa) and not M.pagina_da_wiki(c, uc.format(1), gfa)
+    mot = M.Motor()
+    a = mot.arvore_documentacao(803, "GAI-WEB")
+    assert a.wiki == "gai-web"
+    assert sorted(p.pagina for g in a.grupos for p in g.paginas if g.tipo == "caso_de_uso") == [uc.format(i) for i in (1, 2, 3)]
+    f = mot.arvore_documentacao(10006, "GFA")
+    pf = {p.pagina for g in f.grupos for p in g.paginas}
+    assert uc.format(4) in pf and uc.format(1) not in pf and f.titulo.startswith("GFA")
+    gso = mot.arvore_documentacao(58, "GSO")
+    assert not any(p.pagina.startswith("sistemas:gso:") for g in gso.grupos for p in g.paginas)
+    assert any(p.pagina.startswith("sistemas:portal_do_cliente:") for g in gso.grupos for p in g.paginas)
+
+
 def test_pagina_inteira_por_sigla_com_revogadas_referencias_e_links():
     import re
     mot = M.Motor()
@@ -614,7 +689,8 @@ def test_busca_da_documentacao_monta_a_resposta(monkeypatch):
         return {"resultados": [dict(a) for a in achados]}
     monkeypatch.setattr(M.busca, "busca", falsa)
     res = M.Motor().busca_documentacao(12, "GAI", "desconto quitação", n=7, testes=False)
-    assert chamadas == [("desconto quitação", "gai", dict(n=7, incluir_teste=False, expandir=False, max_por_pagina=2))]
+    assert [(q, s.inteiras, kw) for q, s, kw in chamadas] == [
+        ("desconto quitação", ["gai"], dict(n=7, incluir_teste=False, expandir=False, max_por_pagina=2))]
     assert res[0].titulo == "Regras de negócio: RN257. Desconto de 25%" and res[0].similaridade == 1.0
     assert len(res[0].trecho_html) < 1000 and res[1].similaridade == 0 and res[1].secao is None
     assert M.Motor().busca_documentacao(12, "NAO_EXISTE", "qualquer coisa") == []
@@ -651,7 +727,7 @@ def test_rag_real_traz_documentacao_e_candidatos():
     from nucleo.entrevista.motor import rag, resolve_sistema
     with db.db() as c:
         sid, wiki = resolve_sistema(c, "GAI")      # o GRH não tem catálogo de funções (sem baseline)
-        assert sid and wiki == "gai"
+        assert sid and wiki.inteiras == ["gai"]
         docs, cand = rag(c, Intencao.PAROU_DE_FUNCIONAR, sid, wiki, "erro ao alterar o contrato de alienação do imóvel")
         assert docs and all(d["texto"] for d in docs)
         assert any(d["tipo"] in ("regras_de_negocio", "mensagens") for d in docs)

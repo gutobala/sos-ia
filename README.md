@@ -81,6 +81,25 @@ docker exec sosia_api python -m nucleo.wiki --aplicar    (grava só o que mudou)
 - **Dump:** o `dados/sosia.dump` passa a servir só para distribuição. O banco vivo é o do container; gere o dump de novo quando
   for levar uma cópia.
 
+## Ligação wiki ↔ sistema (11/11/2026)
+Na entrevista, na árvore, na busca e na página, a documentação de um sistema é o **Escopo** que `motor.resolve_sistema(conn,
+sigla, cd_sistema)` devolve (`nucleo/rag/escopo.py`). Ele é montado em duas camadas:
+- **Ligação automática:** as wikis cujo nome, sem pontuação, é a sigla oficial ou um alias do sistema (`apf.sistema_alias`). Por
+  exemplo, o GLP fica com a `glpv2` (alias GLPV2, páginas em `sistemas:glpweb:`) e com a `glp`; o E-SOCIAL fica com a `esocial` e
+  a `esocial_v2`. A maior wiki é a principal.
+- **`config/wiki_sistemas.yaml`:** as decisões que o nome não resolve, tomadas pelo usuário:
+  - `ignorar`: wikis que não valem para nenhum sistema (`gso` inativa, `gfov3`, `gecv2`, `gacv2`);
+  - `wikis`: wikis somadas a um sistema. Exemplos: GSO e GSOV2 ficam com `portal_do_cliente`, `gsov2` e `portal_interno`, e
+    GESTAO-RISCO fica com a `gr`;
+  - `paginas`: divide uma wiki entre sistemas. Na `gai-web`, as UC001–UC003 são do GAI-WEB (SOS 803) e o resto é do GFA (SOS
+    10006). As mensagens e regras que as páginas do sistema citam também entram, por id.
+  - A entrada é achada pelo `cd` (o CD_SISTEMA do SOS) e, sem ele, pela sigla. A rota `/documentacao?sigla=` não recebe o
+    código; nela vale a sigla.
+- **Mudar o yaml exige rebuild da api**, porque `config/` entra na imagem. O resultado fica em cache até a sincronização diária
+  da wiki.
+- Os menus de fonte wiki (`nucleo/menus/catalogo.py`) ainda usam só a ligação automática.
+- `migracao/sql/06_alias_servicos_online.sql` move o alias SERVICOS ONLINE do GAC-GEATE para o GSO. A base de contagens não muda.
+
 ## Subir só a API em modo mock, sem Docker
 ```
 iniciar_mock.bat            (ou: set SOSIA_MOCK=1 && .venv\Scripts\python -m uvicorn servico.app:app --port 8010)
